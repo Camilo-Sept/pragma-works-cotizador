@@ -51,6 +51,7 @@ export type ClientDraft = {
   phone: string;
   email: string;
   projectName: string;
+  targetDeliveryDate?: string;
   notes: string;
 };
 
