@@ -33,6 +33,7 @@ import type {
 } from "@/types/quote";
 
 const CUSTOM_SERVICES_KEY = "pragma-works-custom-services-v1";
+const SERVICE_OVERRIDES_KEY = "pragma-works-service-overrides-v1";
 
 const categoryLabels: Record<ServiceCategory, string> = {
   web: "Web",
@@ -71,6 +72,21 @@ const defaultManualService = (name = ""): Omit<ServiceItem, "id" | "active" | "s
   basePrice: 0,
   estimatedHours: 1,
   requiresApproval: true,
+});
+
+
+const defaultCatalogService = (): ServiceItem => ({
+  id: "",
+  name: "",
+  category: "other",
+  descriptionClient: "",
+  descriptionInternal: "",
+  billingType: "one_time",
+  basePrice: 0,
+  estimatedHours: 1,
+  active: true,
+  source: "catalog",
+  requiresApproval: false,
 });
 
 function makeId(prefix: string) {
@@ -124,6 +140,12 @@ export function CotizadorApp() {
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<QuoteItem[]>([]);
   const [customServices, setCustomServices] = useState<ServiceItem[]>([]);
+  const [serviceOverrides, setServiceOverrides] = useState<Record<string, ServiceItem>>({});
+  const [catalogDraft, setCatalogDraft] = useState<ServiceItem>(defaultCatalogService());
+  const [editingCatalogId, setEditingCatalogId] = useState<string | null>(null);
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [catalogCategory, setCatalogCategory] = useState<ServiceCategory | "all">("all");
+  const [catalogStatus, setCatalogStatus] = useState<"active" | "inactive" | "all">("active");
   const [manualDraft, setManualDraft] = useState(defaultManualService());
   const [saveManualToCatalog, setSaveManualToCatalog] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -144,6 +166,16 @@ export function CotizadorApp() {
       }
     }
 
+    const overrideRaw = window.localStorage.getItem(SERVICE_OVERRIDES_KEY);
+    if (overrideRaw) {
+      try {
+        const parsed = JSON.parse(overrideRaw) as Record<string, ServiceItem>;
+        setServiceOverrides(parsed);
+      } catch {
+        window.localStorage.removeItem(SERVICE_OVERRIDES_KEY);
+      }
+    }
+
     setSavedQuotes(loadSavedQuotes());
     setValidUntil(getDefaultValidUntil());
   }, []);
@@ -152,9 +184,23 @@ export function CotizadorApp() {
     window.localStorage.setItem(CUSTOM_SERVICES_KEY, JSON.stringify(customServices));
   }, [customServices]);
 
+  useEffect(() => {
+    window.localStorage.setItem(SERVICE_OVERRIDES_KEY, JSON.stringify(serviceOverrides));
+  }, [serviceOverrides]);
+
+  const baseServicesWithOverrides = useMemo(
+    () => initialServices.map((service) => serviceOverrides[service.id] ?? service),
+    [serviceOverrides],
+  );
+
+  const catalogServices = useMemo(
+    () => [...baseServicesWithOverrides, ...customServices],
+    [baseServicesWithOverrides, customServices],
+  );
+
   const services = useMemo(
-    () => [...initialServices, ...customServices].filter((service) => service.active),
-    [customServices],
+    () => catalogServices.filter((service) => service.active),
+    [catalogServices],
   );
 
   const normalizedQuery = query.trim().toLowerCase();
@@ -199,6 +245,22 @@ export function CotizadorApp() {
 
   const sortedSavedQuotes = useMemo(() => sortQuotesByUpdatedAt(savedQuotes), [savedQuotes]);
 
+  const filteredCatalogServices = useMemo(() => {
+    const search = catalogSearch.trim().toLowerCase();
+
+    return catalogServices
+      .filter((service) => catalogCategory === "all" || service.category === catalogCategory)
+      .filter((service) => catalogStatus === "all" || (catalogStatus === "active" ? service.active : !service.active))
+      .filter((service) => {
+        if (!search) return true;
+
+        return [service.name, service.descriptionClient, service.descriptionInternal ?? "", categoryLabels[service.category]]
+          .join(" ")
+          .toLowerCase()
+          .includes(search);
+      });
+  }, [catalogCategory, catalogSearch, catalogServices, catalogStatus]);
+
   const historyTotals = useMemo(() => {
     return savedQuotes.reduce(
       (acc, quote) => {
@@ -221,9 +283,133 @@ export function CotizadorApp() {
     window.setTimeout(() => setSavedMessage(""), 2200);
   }
 
+  function persistCustomServices(nextServices: ServiceItem[]) {
+    setCustomServices(nextServices);
+    window.localStorage.setItem(CUSTOM_SERVICES_KEY, JSON.stringify(nextServices));
+  }
+
+  function persistServiceOverrides(nextOverrides: Record<string, ServiceItem>) {
+    setServiceOverrides(nextOverrides);
+    window.localStorage.setItem(SERVICE_OVERRIDES_KEY, JSON.stringify(nextOverrides));
+  }
+
   function addService(service: ServiceItem) {
     setItems((current) => [...current, serviceToQuoteItem(service)]);
     setQuery("");
+  }
+
+  function startNewCatalogService() {
+    setCatalogDraft(defaultCatalogService());
+    setEditingCatalogId(null);
+    showSavedMessage("Captura el nuevo servicio en el formulario del catálogo.");
+  }
+
+  function startEditCatalogService(service: ServiceItem) {
+    setCatalogDraft({ ...service });
+    setEditingCatalogId(service.id);
+    setActiveTab("catalog");
+  }
+
+  function saveCatalogService() {
+    if (!catalogDraft.name.trim()) {
+      showSavedMessage("El servicio necesita nombre.");
+      return;
+    }
+
+    if (catalogDraft.basePrice < 0) {
+      showSavedMessage("El precio no puede ser negativo.");
+      return;
+    }
+
+    const normalizedDraft: ServiceItem = {
+      ...catalogDraft,
+      id: editingCatalogId ?? makeId("svc-custom"),
+      name: catalogDraft.name.trim(),
+      descriptionClient: catalogDraft.descriptionClient.trim() || "Servicio agregado desde el catálogo editable.",
+      descriptionInternal: catalogDraft.descriptionInternal?.trim() || "",
+      basePrice: Math.max(0, catalogDraft.basePrice),
+      estimatedHours: Math.max(0, catalogDraft.estimatedHours),
+      source: "catalog",
+    };
+
+    const isBaseService = initialServices.some((service) => service.id === normalizedDraft.id);
+
+    if (isBaseService) {
+      persistServiceOverrides({ ...serviceOverrides, [normalizedDraft.id]: normalizedDraft });
+    } else {
+      const exists = customServices.some((service) => service.id === normalizedDraft.id);
+      const nextServices = exists
+        ? customServices.map((service) => (service.id === normalizedDraft.id ? normalizedDraft : service))
+        : [normalizedDraft, ...customServices];
+
+      persistCustomServices(nextServices);
+    }
+
+    setCatalogDraft(defaultCatalogService());
+    setEditingCatalogId(null);
+    showSavedMessage("Servicio guardado en catálogo local.");
+  }
+
+  function cloneServiceToCatalog(service: ServiceItem) {
+    const cloned: ServiceItem = {
+      ...service,
+      id: makeId("svc-custom"),
+      name: `${service.name} (ajustado)`,
+      source: "catalog",
+      active: true,
+      requiresApproval: true,
+      descriptionInternal: `Copia editable basada en ${service.name}.`,
+    };
+
+    persistCustomServices([cloned, ...customServices]);
+    setCatalogDraft(cloned);
+    setEditingCatalogId(cloned.id);
+    showSavedMessage("Servicio copiado como concepto editable.");
+  }
+
+  function toggleCatalogService(service: ServiceItem) {
+    const updated: ServiceItem = { ...service, active: !service.active };
+    const isBaseService = initialServices.some((baseService) => baseService.id === service.id);
+
+    if (isBaseService) {
+      persistServiceOverrides({ ...serviceOverrides, [service.id]: updated });
+    } else {
+      persistCustomServices(customServices.map((current) => (current.id === service.id ? updated : current)));
+    }
+
+    showSavedMessage(updated.active ? "Servicio activado." : "Servicio desactivado del buscador.");
+  }
+
+  function deleteCustomCatalogService(serviceId: string) {
+    const confirmed = window.confirm("¿Eliminar este servicio personalizado? No se eliminarán cotizaciones ya guardadas.");
+    if (!confirmed) return;
+
+    persistCustomServices(customServices.filter((service) => service.id !== serviceId));
+
+    if (editingCatalogId === serviceId) {
+      setCatalogDraft(defaultCatalogService());
+      setEditingCatalogId(null);
+    }
+
+    showSavedMessage("Servicio personalizado eliminado.");
+  }
+
+  function resetBaseCatalogService(serviceId: string) {
+    const nextOverrides = { ...serviceOverrides };
+    delete nextOverrides[serviceId];
+    persistServiceOverrides(nextOverrides);
+
+    if (editingCatalogId === serviceId) {
+      setCatalogDraft(defaultCatalogService());
+      setEditingCatalogId(null);
+    }
+
+    showSavedMessage("Servicio base restaurado a su precio original.");
+  }
+
+  function clearCatalogDraft() {
+    setCatalogDraft(defaultCatalogService());
+    setEditingCatalogId(null);
   }
 
   function createManualConcept() {
@@ -400,8 +586,8 @@ export function CotizadorApp() {
         </section>
         <div className="pill-row">
           <span className="pill">UI V1 sin BD</span>
-          <span className="pill">Sprint 1.2</span>
-          <span className="pill">Vista imprimible</span>
+          <span className="pill">Sprint 1.3</span>
+          <span className="pill">Catálogo editable</span>
         </div>
       </header>
 
@@ -945,30 +1131,171 @@ export function CotizadorApp() {
       )}
 
       {activeTab === "catalog" && (
-        <section className="grid">
+        <section className="grid two">
+          <section className="card catalog-editor-card">
+            <div className="card-title">
+              <div>
+                <h2>{editingCatalogId ? "Editar servicio" : "Nuevo servicio"}</h2>
+                <p>Administra servicios y precios sin tocar código. Se guardan localmente en este navegador.</p>
+              </div>
+              <button className="btn ghost" onClick={clearCatalogDraft}>Limpiar formulario</button>
+            </div>
+
+            <div className="form-grid">
+              <div className="field">
+                <label>Nombre del servicio</label>
+                <input
+                  value={catalogDraft.name}
+                  onChange={(event) => setCatalogDraft({ ...catalogDraft, name: event.target.value })}
+                  placeholder="Ej. Módulo de membresías"
+                />
+              </div>
+              <div className="field">
+                <label>Categoría</label>
+                <select value={catalogDraft.category} onChange={(event) => setCatalogDraft({ ...catalogDraft, category: event.target.value as ServiceCategory })}>
+                  {Object.entries(categoryLabels).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>Tipo de cobro</label>
+                <select value={catalogDraft.billingType} onChange={(event) => setCatalogDraft({ ...catalogDraft, billingType: event.target.value as BillingType })}>
+                  <option value="one_time">Único</option>
+                  <option value="monthly">Mensual</option>
+                  <option value="annual">Anual</option>
+                  <option value="hourly">Por hora</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>Precio público</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={catalogDraft.basePrice}
+                  onChange={(event) => setCatalogDraft({ ...catalogDraft, basePrice: safeNumber(event.target.value) })}
+                />
+              </div>
+              <div className="field">
+                <label>Horas estimadas</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={catalogDraft.estimatedHours}
+                  onChange={(event) => setCatalogDraft({ ...catalogDraft, estimatedHours: safeNumber(event.target.value, 1) })}
+                />
+              </div>
+              <div className="field">
+                <label>Estatus</label>
+                <select value={catalogDraft.active ? "active" : "inactive"} onChange={(event) => setCatalogDraft({ ...catalogDraft, active: event.target.value === "active" })}>
+                  <option value="active">Activo en buscador</option>
+                  <option value="inactive">Inactivo / oculto</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>Revisión interna</label>
+                <select value={catalogDraft.requiresApproval ? "yes" : "no"} onChange={(event) => setCatalogDraft({ ...catalogDraft, requiresApproval: event.target.value === "yes" })}>
+                  <option value="no">No requiere</option>
+                  <option value="yes">Sí requiere aprobación</option>
+                </select>
+              </div>
+              <div className="field full">
+                <label>Descripción para cliente</label>
+                <textarea
+                  value={catalogDraft.descriptionClient}
+                  onChange={(event) => setCatalogDraft({ ...catalogDraft, descriptionClient: event.target.value })}
+                  placeholder="Explicación comercial clara para incluir en propuestas."
+                />
+              </div>
+              <div className="field full">
+                <label>Nota interna</label>
+                <textarea
+                  value={catalogDraft.descriptionInternal ?? ""}
+                  onChange={(event) => setCatalogDraft({ ...catalogDraft, descriptionInternal: event.target.value })}
+                  placeholder="Criterios, riesgos, pendientes o notas para uso interno."
+                />
+              </div>
+            </div>
+
+            <div className="split-actions">
+              <button className="btn success" onClick={saveCatalogService} disabled={!catalogDraft.name.trim()}>
+                {editingCatalogId ? "Guardar cambios" : "Crear servicio"}
+              </button>
+              <button className="btn ghost" onClick={startNewCatalogService}>Nuevo desde cero</button>
+            </div>
+
+            <div className="notice info">
+              Los servicios base pueden editarse mediante una anulación local. Si después se agrega base de datos, estas reglas se migran al catálogo administrable real.
+            </div>
+          </section>
+
           <section className="card">
             <div className="card-title">
               <div>
-                <h2>Catálogo local de servicios</h2>
-                <p>V1 usa catálogo en archivo + conceptos personalizados guardados en este navegador.</p>
+                <h2>Catálogo administrable local</h2>
+                <p>Edita precios, activa/desactiva servicios y agrega conceptos permanentes para futuras cotizaciones.</p>
+              </div>
+            </div>
+
+            <div className="catalog-toolbar">
+              <div className="field">
+                <label>Buscar</label>
+                <input value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} placeholder="Nombre, descripción o categoría..." />
+              </div>
+              <div className="field">
+                <label>Categoría</label>
+                <select value={catalogCategory} onChange={(event) => setCatalogCategory(event.target.value as ServiceCategory | "all")}>
+                  <option value="all">Todas</option>
+                  {Object.entries(categoryLabels).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>Estatus</label>
+                <select value={catalogStatus} onChange={(event) => setCatalogStatus(event.target.value as "active" | "inactive" | "all")}>
+                  <option value="active">Activos</option>
+                  <option value="inactive">Inactivos</option>
+                  <option value="all">Todos</option>
+                </select>
               </div>
             </div>
 
             <div className="catalog-list">
-              {services.map((service) => (
-                <article className="service-row" key={service.id}>
-                  <div>
-                    <h4>{service.name}</h4>
-                    <p>{service.descriptionClient}</p>
-                    <div className="meta-row">
-                      <span className="meta">{categoryLabels[service.category]}</span>
-                      <span className="meta">{formatBillingType(service.billingType)}</span>
-                      <span className="meta">{formatCurrency(service.basePrice)}</span>
-                      <span className="meta">{service.source === "catalog" ? "Catálogo" : "Manual"}</span>
-                    </div>
-                  </div>
-                </article>
-              ))}
+              {filteredCatalogServices.length === 0 ? (
+                <div className="notice">No hay servicios con esos filtros.</div>
+              ) : (
+                filteredCatalogServices.map((service) => {
+                  const isBaseService = initialServices.some((baseService) => baseService.id === service.id);
+                  const hasOverride = Boolean(serviceOverrides[service.id]);
+                  const isCustomService = customServices.some((customService) => customService.id === service.id);
+
+                  return (
+                    <article className={`service-row catalog-row ${service.active ? "" : "inactive"}`} key={service.id}>
+                      <div>
+                        <h4>{service.name}</h4>
+                        <p>{service.descriptionClient}</p>
+                        <div className="meta-row">
+                          <span className="meta">{categoryLabels[service.category]}</span>
+                          <span className="meta">{formatBillingType(service.billingType)}</span>
+                          <span className="meta">{formatCurrency(service.basePrice)}</span>
+                          <span className="meta">{service.estimatedHours} h</span>
+                          <span className="meta">{service.active ? "Activo" : "Inactivo"}</span>
+                          <span className="meta">{isBaseService ? (hasOverride ? "Base ajustado" : "Base") : "Personalizado"}</span>
+                        </div>
+                      </div>
+                      <div className="catalog-actions">
+                        <button className="btn ghost small" onClick={() => startEditCatalogService(service)}>Editar</button>
+                        <button className="btn primary small" onClick={() => addService(service)} disabled={!service.active}>Cotizar</button>
+                        <button className="btn warning small" onClick={() => toggleCatalogService(service)}>{service.active ? "Desactivar" : "Activar"}</button>
+                        {isBaseService && <button className="btn ghost small" onClick={() => cloneServiceToCatalog(service)}>Copiar</button>}
+                        {isBaseService && hasOverride && <button className="btn danger small" onClick={() => resetBaseCatalogService(service.id)}>Restaurar</button>}
+                        {isCustomService && <button className="btn danger small" onClick={() => deleteCustomCatalogService(service.id)}>Eliminar</button>}
+                      </div>
+                    </article>
+                  );
+                })
+              )}
             </div>
           </section>
         </section>
@@ -1041,25 +1368,25 @@ export function CotizadorApp() {
             <div className="card-title">
               <div>
                 <h2>GitHub</h2>
-                <p>Comandos sugeridos para cerrar el Sprint 1.2.</p>
+                <p>Comandos sugeridos para cerrar el Sprint 1.3.</p>
               </div>
             </div>
             <pre className="preview">{`git status
 git add .
-git commit -m "feat: agregar vista imprimible de cotizacion"
-git push -u origin sprint-1-2-vista-pdf`}</pre>
+git commit -m "feat: agregar catalogo editable local"
+git push -u origin sprint-1-3-catalogo-editable`}</pre>
           </section>
           <section className="card">
             <div className="card-title">
               <div>
                 <h2>Siguiente sprint</h2>
-                <p>No meter base de datos hasta validar guardado local y flujo de historial.</p>
+                <p>No meter base de datos hasta validar el catálogo editable y el flujo comercial.</p>
               </div>
             </div>
             <div className="grid">
-              <div className="service-row"><div><h4>Sprint 1.2</h4><p>Vista imprimible / PDF desde navegador.</p></div></div>
-              <div className="service-row"><div><h4>Sprint 1.3</h4><p>Reportes simples desde cotizaciones guardadas.</p></div></div>
-              <div className="service-row"><div><h4>Sprint 2</h4><p>Agregar login, base de datos y catálogo administrable.</p></div></div>
+              <div className="service-row"><div><h4>Sprint 1.3</h4><p>Catálogo editable local: crear, editar, activar, desactivar y ajustar precios.</p></div></div>
+              <div className="service-row"><div><h4>Sprint 1.4</h4><p>Reportes simples desde cotizaciones guardadas.</p></div></div>
+              <div className="service-row"><div><h4>Sprint 2</h4><p>Agregar login, base de datos y catálogo administrable en servidor.</p></div></div>
               <div className="service-row"><div><h4>Sprint 3</h4><p>Docker, PostgreSQL, deploy y PWA instalable.</p></div></div>
             </div>
           </section>
@@ -1067,7 +1394,7 @@ git push -u origin sprint-1-2-vista-pdf`}</pre>
       )}
 
       <p className="footer-note">
-        {companyProfile.name} · Sprint 1.2 · Vista imprimible · Sin datos sensibles · Base limpia para GitHub.
+        {companyProfile.name} · Sprint 1.3 · Catálogo editable · Sin datos sensibles · Base limpia para GitHub.
       </p>
     </main>
   );

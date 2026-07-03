@@ -26,9 +26,11 @@ Esta versión está hecha **a propósito sin Docker, Prisma, PostgreSQL, login n
   - Entrega al liquidar.
   - Compra total.
 - Catálogo local de servicios y módulos.
+- Catálogo editable desde UI para agregar, editar, activar/desactivar y ajustar precios.
 - Buscador inteligente de conceptos.
 - Alta rápida de conceptos desde la cotización.
 - Opción para guardar conceptos nuevos en catálogo local del navegador.
+- Anulaciones locales para ajustar servicios base sin modificar código.
 - Cálculo automático de:
   - pago inicial,
   - mensualidad,
@@ -146,6 +148,14 @@ Completado en rama de trabajo local:
 
 ### Sprint 1.3
 
+- Catálogo editable desde UI. ✅
+- Crear nuevos servicios desde el módulo de catálogo. ✅
+- Editar precio, categoría, tipo de cobro, horas y descripciones. ✅
+- Activar/desactivar servicios del buscador. ✅
+- Restaurar servicios base ajustados. ✅
+
+### Sprint 1.4
+
 - Reportes simples desde historial local.
 - Filtros por estado de cotización.
 - Totales por estatus.
@@ -155,7 +165,7 @@ Completado en rama de trabajo local:
 - Login.
 - Roles.
 - Base de datos.
-- Catálogo administrable.
+- Catálogo administrable en servidor.
 
 ### Sprint 3
 
