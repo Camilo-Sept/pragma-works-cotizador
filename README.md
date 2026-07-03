@@ -41,8 +41,13 @@ Esta versión está hecha **a propósito sin Docker, Prisma, PostgreSQL, login n
 - Guardado local de cotizaciones en `localStorage`.
 - Historial de cotizaciones recientes.
 - Reportes locales desde cotizaciones guardadas.
-- Filtros de reportes por estado, modalidad, fecha y búsqueda.
+- Filtros de reportes por estado, modalidad, fecha y búsqueda, con indicador visible de filtros aplicados.
+- KPIs útiles de dinero aceptado, mensualidad aceptada, renovación anual, trabajo aceptado y propuestas por cerrar.
+- Seguimiento de cotizaciones por vencer y vencidas.
+- Fecha objetivo de entrega por proyecto.
+- Tablas de proyectos por entregar, vencimientos y cotizaciones con dinero por cerrar.
 - Exportación CSV de reportes locales.
+- Impresión / guardado como PDF del reporte desde el navegador.
 - Folio automático tipo `PW-000001`.
 - Estados: borrador, enviada, aceptada y rechazada.
 - Duplicar, abrir y eliminar cotizaciones guardadas.

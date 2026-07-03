@@ -1109,3 +1109,170 @@ select option {
     text-align: left;
   }
 }
+
+/* Sprint 1.4.1 - Reportes más útiles */
+.filter-status-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(47, 140, 255, 0.08);
+}
+
+.filter-status-panel strong {
+  display: block;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.filter-status-panel p,
+.filter-status-panel small {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.filter-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 7px 10px;
+  border: 1px solid rgba(47, 140, 255, 0.28);
+  border-radius: 999px;
+  color: #b8d7ff;
+  background: rgba(47, 140, 255, 0.1);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.useful-kpis {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.kpi-helper {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.action-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.action-list div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 14px;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.action-list span {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.action-list strong {
+  color: var(--text);
+  font-size: 1.12rem;
+}
+
+.action-list small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+
+.report-table-head.delivery,
+.report-table-row.delivery,
+.report-table-head.due,
+.report-table-row.due {
+  grid-template-columns: 0.65fr 1.55fr 0.85fr 0.75fr 0.55fr 0.75fr 0.55fr;
+}
+
+.report-table-head.opportunity,
+.report-table-row.opportunity {
+  grid-template-columns: 0.65fr 1.7fr 0.8fr 0.85fr 0.85fr 0.55fr;
+}
+
+.report-table-row.delivery > strong:nth-child(4),
+.report-table-row.delivery > strong:nth-child(5),
+.report-table-row.delivery > strong:nth-child(6),
+.report-table-row.due > strong:nth-child(5),
+.report-table-row.due > strong:nth-child(6),
+.report-table-row.opportunity > strong:nth-child(4),
+.report-table-row.opportunity > strong:nth-child(5) {
+  text-align: right;
+}
+
+@media (max-width: 1120px) {
+  .useful-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .report-table-head.delivery,
+  .report-table-row.delivery,
+  .report-table-head.due,
+  .report-table-row.due,
+  .report-table-head.opportunity,
+  .report-table-row.opportunity {
+    grid-template-columns: 1fr;
+  }
+
+  .report-table-row.delivery > strong:nth-child(4),
+  .report-table-row.delivery > strong:nth-child(5),
+  .report-table-row.delivery > strong:nth-child(6),
+  .report-table-row.due > strong:nth-child(5),
+  .report-table-row.due > strong:nth-child(6),
+  .report-table-row.opportunity > strong:nth-child(4),
+  .report-table-row.opportunity > strong:nth-child(5) {
+    text-align: left;
+  }
+}
+
+@media (max-width: 720px) {
+  .useful-kpis {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media print {
+  .reports-page .card {
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+
+  .reports-page .no-print {
+    display: none !important;
+  }
+
+  .filter-status-panel,
+  .status-report-card,
+  .action-list div,
+  .report-table-row {
+    break-inside: avoid;
+  }
+
+  .report-table-head,
+  .report-table-row {
+    grid-template-columns: 0.7fr 1.7fr 0.8fr 0.8fr 0.8fr 0.6fr !important;
+  }
+
+  .report-table-head.delivery,
+  .report-table-row.delivery,
+  .report-table-head.due,
+  .report-table-row.due {
+    grid-template-columns: 0.65fr 1.45fr 0.8fr 0.75fr 0.55fr 0.75fr 0.55fr !important;
+  }
+}

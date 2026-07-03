@@ -4,13 +4,26 @@
 
 UI V1 funcional sin backend.
 
+## Completado en Sprint 1.4.1
+
+- Reportes locales ajustados para mostrar datos más útiles.
+- Indicador visible de búsqueda y filtros aplicados.
+- Botón para imprimir / guardar reporte como PDF desde navegador.
+- Cambio de lenguaje comercial: se quitaron métricas genéricas tipo pipeline/conversión como foco principal.
+- KPIs de pago inicial aceptado, mensualidad aceptada, renovación anual aceptada y trabajo aceptado.
+- Seguimiento de propuestas por cerrar, cotizaciones por vencer y vencidas.
+- Campo de fecha objetivo de entrega en la cotización.
+- Tabla de proyectos por entregar por semana/mes usando fecha objetivo.
+- Tabla de vencimiento de cotizaciones.
+- Tabla de cotizaciones con dinero por cerrar.
+- Exportación CSV con fecha objetivo de entrega.
+
 ## Completado en Sprint 1.4
 
 - Reportes locales desde cotizaciones guardadas.
 - Filtros por estado, modalidad, fechas y búsqueda.
-- KPIs comerciales: cotizaciones filtradas, conversión, pipeline inicial, mensual, renovación anual y horas.
+- KPIs comerciales iniciales.
 - Resumen por estado.
-- Embudo rápido de borradores, enviadas, aceptadas y rechazadas.
 - Oportunidades principales ordenadas por pago inicial.
 - Exportación CSV del reporte filtrado.
 
@@ -47,7 +60,7 @@ UI V1 funcional sin backend.
 - Validar resumen de WhatsApp.
 - Validar que la vista imprimible sea clara para cliente final.
 - Validar catálogo editable local y precios modificados desde UI.
-- Validar reportes locales, filtros y exportación CSV.
+- Validar reportes locales, filtros, PDF, fechas objetivo y exportación CSV.
 - Validar conceptos de mantenimiento y confidencialidad.
 
 ## Orden correcto

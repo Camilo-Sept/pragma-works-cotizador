@@ -60,6 +60,7 @@ const defaultClient: ClientDraft = {
   phone: "",
   email: "",
   projectName: "",
+  targetDeliveryDate: "",
   notes: "",
 };
 
@@ -129,6 +130,42 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat("es-MX", {
     dateStyle: "medium",
   }).format(new Date(`${value}T12:00:00`));
+}
+
+function getStartOfToday() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+function getDaysUntil(dateValue?: string) {
+  if (!dateValue) return null;
+
+  const targetDate = new Date(`${dateValue.slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(targetDate.getTime())) return null;
+
+  const today = getStartOfToday();
+  const difference = targetDate.getTime() - today.getTime();
+  return Math.round(difference / 86_400_000);
+}
+
+function formatDayDistance(days: number | null) {
+  if (days === null) return "Sin fecha";
+  if (days === 0) return "Vence hoy";
+  if (days === 1) return "Mañana";
+  if (days > 1) return `En ${days} días`;
+  if (days === -1) return "Ayer";
+  return `Hace ${Math.abs(days)} días`;
+}
+
+function isQuoteUpdatedInRange(quote: SavedQuote, fromDate: string, toDate: string) {
+  const updatedTime = new Date(quote.updatedAt).getTime();
+  const fromTime = fromDate ? new Date(`${fromDate}T00:00:00`).getTime() : null;
+  const toTime = toDate ? new Date(`${toDate}T23:59:59`).getTime() : null;
+
+  if (fromTime && updatedTime < fromTime) return false;
+  if (toTime && updatedTime > toTime) return false;
+  return true;
 }
 
 function getDateInputValue(value: string) {
@@ -294,16 +331,12 @@ export function CotizadorApp() {
 
   const reportQuotes = useMemo(() => {
     const search = reportSearch.trim().toLowerCase();
-    const fromTime = reportFromDate ? new Date(`${reportFromDate}T00:00:00`).getTime() : null;
-    const toTime = reportToDate ? new Date(`${reportToDate}T23:59:59`).getTime() : null;
 
     return sortQuotesByUpdatedAt(savedQuotes).filter((quote) => {
       if (reportStatus !== "all" && quote.status !== reportStatus) return false;
       if (reportMode !== "all" && quote.mode !== reportMode) return false;
 
-      const updatedTime = new Date(quote.updatedAt).getTime();
-      if (fromTime && updatedTime < fromTime) return false;
-      if (toTime && updatedTime > toTime) return false;
+      if (!isQuoteUpdatedInRange(quote, reportFromDate, reportToDate)) return false;
 
       if (!search) return true;
 
@@ -314,6 +347,7 @@ export function CotizadorApp() {
         quote.client.projectName,
         quote.client.email,
         quote.client.phone,
+        quote.client.targetDeliveryDate ?? "",
         statusLabels[quote.status],
         formatQuoteMode(quote.mode),
       ]
@@ -334,24 +368,58 @@ export function CotizadorApp() {
         acc.sent += quote.status === "sent" ? 1 : 0;
         acc.draft += quote.status === "draft" ? 1 : 0;
         acc.rejected += quote.status === "rejected" ? 1 : 0;
+
+        if (quote.status === "accepted") {
+          acc.acceptedInitial += quote.totals.suggestedInitialPayment;
+          acc.acceptedMonthly += quote.totals.suggestedMonthlyPayment;
+          acc.acceptedAnnual += quote.totals.suggestedAnnualRenewal;
+          acc.acceptedHours += quote.totals.estimatedHours;
+        }
+
+        if (quote.status === "sent") {
+          acc.sentInitial += quote.totals.suggestedInitialPayment;
+          acc.sentMonthly += quote.totals.suggestedMonthlyPayment;
+        }
+
+        if (quote.status === "draft") {
+          acc.draftInitial += quote.totals.suggestedInitialPayment;
+        }
         return acc;
       },
-      { initial: 0, monthly: 0, annual: 0, hours: 0, accepted: 0, sent: 0, draft: 0, rejected: 0 },
+      {
+        initial: 0,
+        monthly: 0,
+        annual: 0,
+        hours: 0,
+        accepted: 0,
+        sent: 0,
+        draft: 0,
+        rejected: 0,
+        acceptedInitial: 0,
+        acceptedMonthly: 0,
+        acceptedAnnual: 0,
+        acceptedHours: 0,
+        sentInitial: 0,
+        sentMonthly: 0,
+        draftInitial: 0,
+      },
     );
   }, [reportQuotes]);
 
   const reportStatusSummary = useMemo(() => {
-    const base: Record<QuoteStatus, { count: number; initial: number; monthly: number }> = {
-      draft: { count: 0, initial: 0, monthly: 0 },
-      sent: { count: 0, initial: 0, monthly: 0 },
-      accepted: { count: 0, initial: 0, monthly: 0 },
-      rejected: { count: 0, initial: 0, monthly: 0 },
+    const base: Record<QuoteStatus, { count: number; initial: number; monthly: number; annual: number; hours: number }> = {
+      draft: { count: 0, initial: 0, monthly: 0, annual: 0, hours: 0 },
+      sent: { count: 0, initial: 0, monthly: 0, annual: 0, hours: 0 },
+      accepted: { count: 0, initial: 0, monthly: 0, annual: 0, hours: 0 },
+      rejected: { count: 0, initial: 0, monthly: 0, annual: 0, hours: 0 },
     };
 
     reportQuotes.forEach((quote) => {
       base[quote.status].count += 1;
       base[quote.status].initial += quote.totals.suggestedInitialPayment;
       base[quote.status].monthly += quote.totals.suggestedMonthlyPayment;
+      base[quote.status].annual += quote.totals.suggestedAnnualRenewal;
+      base[quote.status].hours += quote.totals.estimatedHours;
     });
 
     return base;
@@ -359,7 +427,83 @@ export function CotizadorApp() {
 
   const topReportQuotes = useMemo(() => {
     return [...reportQuotes]
+      .filter((quote) => quote.status === "sent" || quote.status === "draft")
       .sort((a, b) => b.totals.suggestedInitialPayment - a.totals.suggestedInitialPayment)
+      .slice(0, 8);
+  }, [reportQuotes]);
+
+  const reportFilterLabels = useMemo(() => {
+    const filters: string[] = [];
+    const search = reportSearch.trim();
+
+    if (search) filters.push(`Búsqueda: “${search}”`);
+    if (reportStatus !== "all") filters.push(`Estado: ${statusLabels[reportStatus]}`);
+    if (reportMode !== "all") filters.push(`Modalidad: ${formatQuoteMode(reportMode)}`);
+    if (reportFromDate) filters.push(`Actualizadas desde: ${formatDate(reportFromDate)}`);
+    if (reportToDate) filters.push(`Actualizadas hasta: ${formatDate(reportToDate)}`);
+
+    return filters;
+  }, [reportFromDate, reportMode, reportSearch, reportStatus, reportToDate]);
+
+  const reportBusinessSummary = useMemo(() => {
+    const sentOrDraftQuotes = reportQuotes.filter((quote) => quote.status === "sent" || quote.status === "draft");
+    const acceptedQuotes = reportQuotes.filter((quote) => quote.status === "accepted");
+
+    const quotesDueSoon = sentOrDraftQuotes.filter((quote) => {
+      const days = getDaysUntil(quote.validUntil);
+      return days !== null && days >= 0 && days <= 7;
+    });
+
+    const expiredQuotes = sentOrDraftQuotes.filter((quote) => {
+      const days = getDaysUntil(quote.validUntil);
+      return days !== null && days < 0;
+    });
+
+    const acceptedWithDeliveryDate = acceptedQuotes.filter((quote) => quote.client.targetDeliveryDate);
+    const acceptedWithoutDeliveryDate = acceptedQuotes.length - acceptedWithDeliveryDate.length;
+
+    const deliveryThisWeek = acceptedWithDeliveryDate.filter((quote) => {
+      const days = getDaysUntil(quote.client.targetDeliveryDate);
+      return days !== null && days >= 0 && days <= 7;
+    });
+
+    const deliveryThisMonth = acceptedWithDeliveryDate.filter((quote) => {
+      const days = getDaysUntil(quote.client.targetDeliveryDate);
+      return days !== null && days >= 0 && days <= 30;
+    });
+
+    const overdueDelivery = acceptedWithDeliveryDate.filter((quote) => {
+      const days = getDaysUntil(quote.client.targetDeliveryDate);
+      return days !== null && days < 0;
+    });
+
+    return {
+      quotesDueSoon: quotesDueSoon.length,
+      expiredQuotes: expiredQuotes.length,
+      acceptedWithoutDeliveryDate,
+      deliveryThisWeek: deliveryThisWeek.length,
+      deliveryThisWeekHours: deliveryThisWeek.reduce((total, quote) => total + quote.totals.estimatedHours, 0),
+      deliveryThisMonth: deliveryThisMonth.length,
+      deliveryThisMonthHours: deliveryThisMonth.reduce((total, quote) => total + quote.totals.estimatedHours, 0),
+      overdueDelivery: overdueDelivery.length,
+    };
+  }, [reportQuotes]);
+
+  const deliveryReportQuotes = useMemo(() => {
+    return [...reportQuotes]
+      .filter((quote) => quote.status === "accepted")
+      .sort((a, b) => {
+        const aDate = a.client.targetDeliveryDate || "9999-12-31";
+        const bDate = b.client.targetDeliveryDate || "9999-12-31";
+        return aDate.localeCompare(bDate);
+      })
+      .slice(0, 8);
+  }, [reportQuotes]);
+
+  const expirationReportQuotes = useMemo(() => {
+    return [...reportQuotes]
+      .filter((quote) => quote.status !== "rejected")
+      .sort((a, b) => (a.validUntil || "9999-12-31").localeCompare(b.validUntil || "9999-12-31"))
       .slice(0, 8);
   }, [reportQuotes]);
 
@@ -664,7 +808,8 @@ export function CotizadorApp() {
       "Mensualidad",
       "Renovacion anual",
       "Horas estimadas",
-      "Vigencia",
+      "Vigencia cotizacion",
+      "Fecha objetivo entrega",
       "Creada",
       "Actualizada",
     ];
@@ -681,6 +826,7 @@ export function CotizadorApp() {
       quote.totals.suggestedAnnualRenewal,
       quote.totals.estimatedHours,
       quote.validUntil || "",
+      quote.client.targetDeliveryDate || "",
       getDateInputValue(quote.createdAt),
       getDateInputValue(quote.updatedAt),
     ]);
@@ -699,6 +845,11 @@ export function CotizadorApp() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
     showSavedMessage("Reporte CSV descargado.");
+  }
+
+  function printReports() {
+    window.print();
+    showSavedMessage("Usa Guardar como PDF en la ventana de impresión.");
   }
 
   async function copySummary() {
@@ -819,6 +970,14 @@ export function CotizadorApp() {
                 <div className="field full">
                   <label>Nombre del proyecto</label>
                   <input value={client.projectName} onChange={(event) => setClient({ ...client, projectName: event.target.value })} placeholder="Ej. Sistema de control de pacientes y visitas" />
+                </div>
+                <div className="field">
+                  <label>Fecha objetivo de entrega</label>
+                  <input
+                    type="date"
+                    value={client.targetDeliveryDate ?? ""}
+                    onChange={(event) => setClient({ ...client, targetDeliveryDate: event.target.value })}
+                  />
                 </div>
                 <div className="field full">
                   <label>Notas del levantamiento</label>
@@ -1161,23 +1320,24 @@ export function CotizadorApp() {
       )}
 
       {activeTab === "reports" && (
-        <section className="grid">
+        <section className="grid reports-page">
           <section className="card">
             <div className="card-title">
               <div>
                 <h2>Reportes locales</h2>
-                <p>Analiza las cotizaciones guardadas en este navegador antes de migrar a base de datos.</p>
+                <p>Información útil para seguimiento: dinero aceptado, trabajo pendiente, vencimientos y cotizaciones por cerrar.</p>
               </div>
-              <div className="quote-actions">
+              <div className="quote-actions no-print">
                 <button className="btn ghost" onClick={clearReportFilters}>Limpiar filtros</button>
                 <button className="btn success" onClick={exportReportCsv}>Exportar CSV</button>
+                <button className="btn print" onClick={printReports}>Imprimir / Guardar PDF</button>
               </div>
             </div>
 
-            <div className="report-filters">
+            <div className="report-filters no-print">
               <div className="field">
-                <label>Buscar</label>
-                <input value={reportSearch} onChange={(event) => setReportSearch(event.target.value)} placeholder="Folio, cliente, proyecto, correo..." />
+                <label>Buscar en folio, cliente, proyecto, correo, teléfono, estado o modalidad</label>
+                <input value={reportSearch} onChange={(event) => setReportSearch(event.target.value)} placeholder="Ej. PW-000003, clínica, enviada, híbrido..." />
               </div>
               <div className="field">
                 <label>Estado</label>
@@ -1207,32 +1367,67 @@ export function CotizadorApp() {
                 <input type="date" value={reportToDate} onChange={(event) => setReportToDate(event.target.value)} />
               </div>
             </div>
+
+            <div className="filter-status-panel">
+              <div>
+                <strong>Mostrando {reportQuotes.length} de {savedQuotes.length} cotizaciones</strong>
+                <p>
+                  {reportFilterLabels.length > 0
+                    ? "Filtros aplicados. Los números de abajo ya están recalculados con esos filtros."
+                    : "Sin filtros aplicados. Estás viendo el total local guardado en este navegador."}
+                </p>
+              </div>
+              <div className="filter-chip-row">
+                {reportFilterLabels.length === 0 ? (
+                  <span className="filter-chip">Sin filtros</span>
+                ) : (
+                  reportFilterLabels.map((filter) => <span className="filter-chip" key={filter}>{filter}</span>)
+                )}
+              </div>
+              <small>La búsqueda revisa: folio, empresa, contacto, proyecto, correo, teléfono, fecha objetivo, estado y modalidad.</small>
+            </div>
           </section>
 
-          <section className="kpi-row reports-kpis">
+          <section className="kpi-row reports-kpis useful-kpis">
             <article className="card soft">
-              <div className="kpi-label">Cotizaciones filtradas</div>
-              <strong className="kpi-value">{reportQuotes.length}</strong>
+              <div className="kpi-label">Pago inicial aceptado</div>
+              <strong className="kpi-value">{formatCurrency(reportTotals.acceptedInitial)}</strong>
+              <small className="kpi-helper">Dinero generado por cotizaciones aceptadas.</small>
             </article>
             <article className="card soft">
-              <div className="kpi-label">Conversión aceptada</div>
-              <strong className="kpi-value">{conversionRate}%</strong>
+              <div className="kpi-label">Mensualidad aceptada</div>
+              <strong className="kpi-value">{formatCurrency(reportTotals.acceptedMonthly)}</strong>
+              <small className="kpi-helper">Ingreso mensual comprometido.</small>
             </article>
             <article className="card soft">
-              <div className="kpi-label">Pipeline inicial</div>
-              <strong className="kpi-value">{formatCurrency(reportTotals.initial)}</strong>
+              <div className="kpi-label">Renovación anual aceptada</div>
+              <strong className="kpi-value">{formatCurrency(reportTotals.acceptedAnnual)}</strong>
+              <small className="kpi-helper">Ingreso anual comprometido.</small>
             </article>
             <article className="card soft">
-              <div className="kpi-label">Pipeline mensual</div>
-              <strong className="kpi-value">{formatCurrency(reportTotals.monthly)}</strong>
+              <div className="kpi-label">Trabajo aceptado</div>
+              <strong className="kpi-value">{reportTotals.acceptedHours} h</strong>
+              <small className="kpi-helper">Horas estimadas de proyectos aceptados.</small>
             </article>
             <article className="card soft">
-              <div className="kpi-label">Renovación anual</div>
-              <strong className="kpi-value">{formatCurrency(reportTotals.annual)}</strong>
+              <div className="kpi-label">Propuestas por cerrar</div>
+              <strong className="kpi-value">{reportTotals.sent}</strong>
+              <small className="kpi-helper">Enviadas: {formatCurrency(reportTotals.sentInitial)} inicial.</small>
             </article>
             <article className="card soft">
-              <div className="kpi-label">Horas estimadas</div>
-              <strong className="kpi-value">{reportTotals.hours} h</strong>
+              <div className="kpi-label">Vencen en 7 días</div>
+              <strong className="kpi-value">{reportBusinessSummary.quotesDueSoon}</strong>
+              <small className="kpi-helper">Borradores/enviadas que necesitan seguimiento.</small>
+            </article>
+            <article className="card soft">
+              <div className="kpi-label">Por entregar esta semana</div>
+              <strong className="kpi-value">{reportBusinessSummary.deliveryThisWeek}</strong>
+              <small className="kpi-helper">{reportBusinessSummary.deliveryThisWeekHours} h estimadas.</small>
+            </article>
+            <article className="card soft">
+              <div className="kpi-label">Por entregar este mes</div>
+              <strong className="kpi-value">{reportBusinessSummary.deliveryThisMonth}</strong>
+              <small className="kpi-helper">{reportBusinessSummary.deliveryThisMonthHours} h estimadas.</small>
             </article>
           </section>
 
@@ -1240,8 +1435,8 @@ export function CotizadorApp() {
             <section className="card">
               <div className="card-title">
                 <div>
-                  <h2>Resumen por estado</h2>
-                  <p>Identifica cuánto hay en borrador, enviado, aceptado o rechazado.</p>
+                  <h2>Dinero por estado</h2>
+                  <p>Sirve para ver qué ya generó dinero, qué está por cerrar y qué sigue en borrador.</p>
                 </div>
               </div>
 
@@ -1254,6 +1449,8 @@ export function CotizadorApp() {
                     </div>
                     <p>Inicial: <strong>{formatCurrency(reportStatusSummary[status].initial)}</strong></p>
                     <p>Mensual: <strong>{formatCurrency(reportStatusSummary[status].monthly)}</strong></p>
+                    <p>Renovación anual: <strong>{formatCurrency(reportStatusSummary[status].annual)}</strong></p>
+                    <p>Horas: <strong>{reportStatusSummary[status].hours} h</strong></p>
                   </article>
                 ))}
               </div>
@@ -1262,18 +1459,19 @@ export function CotizadorApp() {
             <section className="card">
               <div className="card-title">
                 <div>
-                  <h2>Embudo rápido</h2>
-                  <p>Lectura comercial simple del estado actual de oportunidades.</p>
+                  <h2>Seguimiento recomendado</h2>
+                  <p>No repite el estado; te dice qué acciones conviene revisar.</p>
                 </div>
               </div>
-              <div className="funnel-list">
-                <div><span>Borradores por completar</span><strong>{reportTotals.draft}</strong></div>
-                <div><span>Propuestas enviadas pendientes</span><strong>{reportTotals.sent}</strong></div>
-                <div><span>Proyectos aceptados</span><strong>{reportTotals.accepted}</strong></div>
-                <div><span>Propuestas rechazadas</span><strong>{reportTotals.rejected}</strong></div>
+              <div className="action-list">
+                <div><span>Enviar / cerrar propuestas enviadas</span><strong>{reportTotals.sent}</strong><small>{formatCurrency(reportTotals.sentInitial)} por cobrar si aceptan.</small></div>
+                <div><span>Completar borradores</span><strong>{reportTotals.draft}</strong><small>{formatCurrency(reportTotals.draftInitial)} todavía sin enviar.</small></div>
+                <div><span>Cotizaciones vencidas</span><strong>{reportBusinessSummary.expiredQuotes}</strong><small>Necesitan renovación de vigencia o descarte.</small></div>
+                <div><span>Entregas atrasadas</span><strong>{reportBusinessSummary.overdueDelivery}</strong><small>Usa la fecha objetivo de entrega capturada en la cotización.</small></div>
+                <div><span>Aceptadas sin fecha de entrega</span><strong>{reportBusinessSummary.acceptedWithoutDeliveryDate}</strong><small>Agrega fecha objetivo para poder planear semana/mes.</small></div>
               </div>
               <div className="notice info">
-                Este reporte todavía es local. Si borras datos del navegador, se pierde. En Sprint 2 se moverá a base de datos con usuarios reales.
+                Para fechas de entrega reales, captura <strong>Fecha objetivo de entrega</strong> en la cotización. La vigencia es sólo la fecha límite comercial de la propuesta.
               </div>
             </section>
           </section>
@@ -1281,16 +1479,100 @@ export function CotizadorApp() {
           <section className="card">
             <div className="card-title">
               <div>
-                <h2>Oportunidades principales</h2>
-                <p>Ordenadas por pago inicial sugerido, usando los filtros actuales.</p>
+                <h2>Proyectos por entregar</h2>
+                <p>Cotizaciones aceptadas ordenadas por fecha objetivo de entrega.</p>
+              </div>
+            </div>
+
+            {deliveryReportQuotes.length === 0 ? (
+              <div className="notice">No hay cotizaciones aceptadas con los filtros actuales. Para planear entregas, marca cotizaciones como aceptadas y captura fecha objetivo.</div>
+            ) : (
+              <div className="report-table delivery-table">
+                <div className="report-table-head delivery">
+                  <span>Folio</span>
+                  <span>Cliente / proyecto</span>
+                  <span>Entrega</span>
+                  <span>Tiempo</span>
+                  <span>Horas</span>
+                  <span>Inicial</span>
+                  <span>Acción</span>
+                </div>
+                {deliveryReportQuotes.map((quote) => {
+                  const days = getDaysUntil(quote.client.targetDeliveryDate);
+                  return (
+                    <article className="report-table-row delivery" key={quote.id}>
+                      <strong>{quote.folio}</strong>
+                      <div>
+                        <strong>{quote.client.company || quote.client.clientName || "Cliente pendiente"}</strong>
+                        <small>{quote.client.projectName || "Proyecto pendiente"}</small>
+                      </div>
+                      <span>{quote.client.targetDeliveryDate ? formatDate(quote.client.targetDeliveryDate) : "Sin fecha"}</span>
+                      <strong>{formatDayDistance(days)}</strong>
+                      <strong>{quote.totals.estimatedHours} h</strong>
+                      <strong>{formatCurrency(quote.totals.suggestedInitialPayment)}</strong>
+                      <button className="btn primary small" onClick={() => loadQuote(quote)}>Abrir</button>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          <section className="card">
+            <div className="card-title">
+              <div>
+                <h2>Vencimiento de cotizaciones</h2>
+                <p>Sirve para saber cuáles propuestas necesitan seguimiento antes de que expire la vigencia.</p>
+              </div>
+            </div>
+
+            {expirationReportQuotes.length === 0 ? (
+              <div className="notice">No hay vencimientos que coincidan con los filtros.</div>
+            ) : (
+              <div className="report-table due-table">
+                <div className="report-table-head due">
+                  <span>Folio</span>
+                  <span>Cliente / proyecto</span>
+                  <span>Estado</span>
+                  <span>Vigencia</span>
+                  <span>Tiempo</span>
+                  <span>Inicial</span>
+                  <span>Acción</span>
+                </div>
+                {expirationReportQuotes.map((quote) => {
+                  const days = getDaysUntil(quote.validUntil);
+                  return (
+                    <article className="report-table-row due" key={quote.id}>
+                      <strong>{quote.folio}</strong>
+                      <div>
+                        <strong>{quote.client.company || quote.client.clientName || "Cliente pendiente"}</strong>
+                        <small>{quote.client.projectName || "Proyecto pendiente"}</small>
+                      </div>
+                      <span className={`status-badge ${quote.status}`}>{statusLabels[quote.status]}</span>
+                      <span>{quote.validUntil ? formatDate(quote.validUntil) : "Sin vigencia"}</span>
+                      <strong>{formatDayDistance(days)}</strong>
+                      <strong>{formatCurrency(quote.totals.suggestedInitialPayment)}</strong>
+                      <button className="btn primary small" onClick={() => loadQuote(quote)}>Abrir</button>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          <section className="card">
+            <div className="card-title">
+              <div>
+                <h2>Cotizaciones con dinero por cerrar</h2>
+                <p>Borradores y enviadas ordenadas por pago inicial sugerido.</p>
               </div>
             </div>
 
             {topReportQuotes.length === 0 ? (
-              <div className="notice">No hay cotizaciones que coincidan con los filtros.</div>
+              <div className="notice">No hay cotizaciones abiertas que coincidan con los filtros.</div>
             ) : (
-              <div className="report-table">
-                <div className="report-table-head">
+              <div className="report-table opportunity-table">
+                <div className="report-table-head opportunity">
                   <span>Folio</span>
                   <span>Cliente / proyecto</span>
                   <span>Estado</span>
@@ -1299,7 +1581,7 @@ export function CotizadorApp() {
                   <span>Acción</span>
                 </div>
                 {topReportQuotes.map((quote) => (
-                  <article className="report-table-row" key={quote.id}>
+                  <article className="report-table-row opportunity" key={quote.id}>
                     <strong>{quote.folio}</strong>
                     <div>
                       <strong>{quote.client.company || quote.client.clientName || "Cliente pendiente"}</strong>
@@ -1368,6 +1650,7 @@ export function CotizadorApp() {
                 <h2>Proyecto</h2>
                 <p><strong>Nombre:</strong> {client.projectName || "Pendiente de definir"}</p>
                 <p><strong>Modalidad:</strong> {formatQuoteMode(mode)}</p>
+                <p><strong>Fecha objetivo de entrega:</strong> {client.targetDeliveryDate ? formatDate(client.targetDeliveryDate) : "Pendiente de definir"}</p>
                 <p><strong>Código fuente:</strong> {formatSourceCodeOption(mode === "rental" ? "none" : sourceCodeOption)}</p>
                 <p><strong>Ciudad:</strong> {companyProfile.city}</p>
               </div>
