@@ -2,25 +2,32 @@
   "name": "pragma-works-cotizador-ui-v1",
   "version": "0.1.0",
   "private": true,
-  "description": "Cotizador UI V1 para Pragma Works. Versión inicial sin base de datos, lista para GitHub.",
+  "description": "Cotizador para Pragma Works. UI local con preparación de backend, Prisma y PostgreSQL.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:validate": "prisma validate",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio",
+    "db:reset": "prisma migrate reset"
   },
   "dependencies": {
     "next": "16.2.10",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "@prisma/client": "6.19.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "prisma": "6.19.0"
   },
   "engines": {
-    "node": ">=20.18.0"
+    "node": ">=20.18.0 <21"
   }
 }

@@ -11,16 +11,16 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: pragma_works_cotizador
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: pragma_app
+      POSTGRES_PASSWORD: pragma_dev_password
     ports:
       # Puerto local para desarrollo. No exponer este puerto en producción.
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       # Volumen nombrado para conservar datos aunque se apague el contenedor.
       - pragma_works_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d pragma_works_cotizador"]
+      test: ["CMD-SHELL", "pg_isready -U pragma_app -d pragma_works_cotizador"]
       interval: 10s
       timeout: 5s
       retries: 5
