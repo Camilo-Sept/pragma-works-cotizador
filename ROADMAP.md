@@ -76,3 +76,21 @@ UI V1 funcional sin backend.
 9. Base de datos.
 10. Docker.
 11. Deploy.
+
+### Sprint 1.6
+
+- Reglas de negocio aplicadas en UI local. ✅
+- Simulación de roles y vistas por perfil. ✅
+- Bloqueo de cotizaciones enviadas/aceptadas. ✅
+- Creación de revisiones R2/R3. ✅
+- Archivar en lugar de borrar cotizaciones cerradas. ✅
+- Matriz local de permisos. ✅
+
+### Sprint 2.0 pendiente
+
+- Backend real.
+- Base de datos.
+- Login real.
+- Validación de permisos en servidor.
+- Auditoría de cambios.
+- Protección real anti SQL injection / abuso de API / DDoS por capas.

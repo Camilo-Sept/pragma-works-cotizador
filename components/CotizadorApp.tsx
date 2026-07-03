@@ -30,10 +30,75 @@ import type {
   ServiceCategory,
   ServiceItem,
   SourceCodeOption,
+  UserRole,
 } from "@/types/quote";
 
 const CUSTOM_SERVICES_KEY = "pragma-works-custom-services-v1";
 const SERVICE_OVERRIDES_KEY = "pragma-works-service-overrides-v1";
+
+const CURRENT_ROLE_KEY = "pragma-works-current-role-v1";
+
+type PermissionKey =
+  | "create_quote"
+  | "edit_draft_quotes"
+  | "change_quote_status"
+  | "delete_draft_quotes"
+  | "archive_locked_quotes"
+  | "view_reports"
+  | "edit_catalog"
+  | "edit_pricing_rules"
+  | "export_data"
+  | "view_github";
+
+const roleLabels: Record<UserRole, string> = {
+  admin: "ADMIN",
+  supervisor: "SUPERVISOR",
+  ventas: "VENTAS",
+  operacion: "OPERACIÓN",
+  lectura: "LECTURA",
+};
+
+const roleDescriptions: Record<UserRole, string> = {
+  admin: "Control total de catálogo, precios, reportes, estados y reglas.",
+  supervisor: "Supervisa cotizaciones, estados, reportes y aprobaciones.",
+  ventas: "Crea cotizaciones, genera PDF y da seguimiento comercial.",
+  operacion: "Consulta proyectos aceptados, fechas objetivo y carga de trabajo.",
+  lectura: "Consulta información sin modificar ni exportar.",
+};
+
+const rolePermissions: Record<UserRole, PermissionKey[]> = {
+  admin: [
+    "create_quote",
+    "edit_draft_quotes",
+    "change_quote_status",
+    "delete_draft_quotes",
+    "archive_locked_quotes",
+    "view_reports",
+    "edit_catalog",
+    "edit_pricing_rules",
+    "export_data",
+    "view_github",
+  ],
+  supervisor: [
+    "create_quote",
+    "edit_draft_quotes",
+    "change_quote_status",
+    "archive_locked_quotes",
+    "view_reports",
+    "export_data",
+  ],
+  ventas: ["create_quote", "edit_draft_quotes", "view_reports", "export_data"],
+  operacion: ["view_reports"],
+  lectura: [],
+};
+
+const tabsByRole: Record<UserRole, Array<"quote" | "history" | "reports" | "preview" | "catalog" | "rules" | "security" | "github">> = {
+  admin: ["quote", "history", "reports", "preview", "catalog", "rules", "security", "github"],
+  supervisor: ["quote", "history", "reports", "preview", "security"],
+  ventas: ["quote", "history", "reports", "preview", "security"],
+  operacion: ["history", "reports", "security"],
+  lectura: ["history", "reports", "security"],
+};
 
 const categoryLabels: Record<ServiceCategory, string> = {
   web: "Web",
@@ -182,8 +247,34 @@ function escapeCsvValue(value: string | number) {
   return text;
 }
 
+
+function isUserRole(value: string | null): value is UserRole {
+  return value === "admin" || value === "supervisor" || value === "ventas" || value === "operacion" || value === "lectura";
+}
+
+function isLockedQuote(quote: SavedQuote | null) {
+  return Boolean(quote && quote.status !== "draft");
+}
+
+function getBaseFolio(folio: string) {
+  return folio.replace(/-R\d+$/i, "");
+}
+
+function getNextRevisionNumber(quotes: SavedQuote[], quote: SavedQuote) {
+  const baseFolio = getBaseFolio(quote.folio);
+  const sameFamily = quotes.filter((savedQuote) => getBaseFolio(savedQuote.folio) === baseFolio);
+  const numbers = sameFamily.map((savedQuote) => savedQuote.revisionNumber ?? (/-R(\d+)$/i.exec(savedQuote.folio)?.[1] ? Number(/-R(\d+)$/i.exec(savedQuote.folio)?.[1]) : 1));
+  return Math.max(1, ...numbers) + 1;
+}
+
+function getNextRevisionFolio(quotes: SavedQuote[], quote: SavedQuote) {
+  const nextRevision = getNextRevisionNumber(quotes, quote);
+  return `${getBaseFolio(quote.folio)}-R${nextRevision}`;
+}
+
 export function CotizadorApp() {
-  const [activeTab, setActiveTab] = useState<"quote" | "history" | "reports" | "preview" | "catalog" | "rules" | "github">("quote");
+  const [activeTab, setActiveTab] = useState<"quote" | "history" | "reports" | "preview" | "catalog" | "rules" | "security" | "github">("quote");
+  const [currentRole, setCurrentRole] = useState<UserRole>("admin");
   const [client, setClient] = useState<ClientDraft>(defaultClient);
   const [mode, setMode] = useState<QuoteMode>("hybrid");
   const [sourceCodeOption, setSourceCodeOption] = useState<SourceCodeOption>("none");
@@ -234,7 +325,20 @@ export function CotizadorApp() {
 
     setSavedQuotes(loadSavedQuotes());
     setValidUntil(getDefaultValidUntil());
+
+    const storedRole = window.localStorage.getItem(CURRENT_ROLE_KEY);
+    if (isUserRole(storedRole)) {
+      setCurrentRole(storedRole);
+    }
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(CURRENT_ROLE_KEY, currentRole);
+
+    if (!tabsByRole[currentRole].includes(activeTab)) {
+      setActiveTab(tabsByRole[currentRole][0]);
+    }
+  }, [activeTab, currentRole]);
 
   useEffect(() => {
     window.localStorage.setItem(CUSTOM_SERVICES_KEY, JSON.stringify(customServices));
@@ -299,7 +403,17 @@ export function CotizadorApp() {
     [currentQuoteId, savedQuotes],
   );
 
-  const sortedSavedQuotes = useMemo(() => sortQuotesByUpdatedAt(savedQuotes), [savedQuotes]);
+  const roleCan = (permission: PermissionKey) => rolePermissions[currentRole].includes(permission);
+  const availableTabs = tabsByRole[currentRole];
+  const currentQuoteLocked = isLockedQuote(currentQuote);
+  const canEditCurrentQuote = roleCan("edit_draft_quotes") && !currentQuoteLocked;
+  const canCreateQuotes = roleCan("create_quote");
+  const canChangeQuoteStatus = roleCan("change_quote_status");
+  const canExportReports = roleCan("export_data");
+  const canEditCatalog = roleCan("edit_catalog");
+  const canEditPricingRules = roleCan("edit_pricing_rules");
+
+  const sortedSavedQuotes = useMemo(() => sortQuotesByUpdatedAt(savedQuotes).filter((quote) => !quote.archivedAt), [savedQuotes]);
 
   const filteredCatalogServices = useMemo(() => {
     const search = catalogSearch.trim().toLowerCase();
@@ -318,7 +432,7 @@ export function CotizadorApp() {
   }, [catalogCategory, catalogSearch, catalogServices, catalogStatus]);
 
   const historyTotals = useMemo(() => {
-    return savedQuotes.reduce(
+    return savedQuotes.filter((quote) => !quote.archivedAt).reduce(
       (acc, quote) => {
         acc.initial += quote.totals.suggestedInitialPayment;
         acc.monthly += quote.totals.suggestedMonthlyPayment;
@@ -332,7 +446,7 @@ export function CotizadorApp() {
   const reportQuotes = useMemo(() => {
     const search = reportSearch.trim().toLowerCase();
 
-    return sortQuotesByUpdatedAt(savedQuotes).filter((quote) => {
+    return sortQuotesByUpdatedAt(savedQuotes.filter((quote) => !quote.archivedAt)).filter((quote) => {
       if (reportStatus !== "all" && quote.status !== reportStatus) return false;
       if (reportMode !== "all" && quote.mode !== reportMode) return false;
 
@@ -530,23 +644,43 @@ export function CotizadorApp() {
   }
 
   function addService(service: ServiceItem) {
+    if (!canEditCurrentQuote) {
+      showSavedMessage(currentQuoteLocked ? "Cotización bloqueada. Crea una revisión para modificar conceptos." : "Tu rol no permite editar cotizaciones.");
+      return;
+    }
+
     setItems((current) => [...current, serviceToQuoteItem(service)]);
     setQuery("");
   }
 
   function startNewCatalogService() {
+    if (!canEditCatalog) {
+      showSavedMessage("Tu rol no permite crear servicios de catálogo.");
+      return;
+    }
+
     setCatalogDraft(defaultCatalogService());
     setEditingCatalogId(null);
     showSavedMessage("Captura el nuevo servicio en el formulario del catálogo.");
   }
 
   function startEditCatalogService(service: ServiceItem) {
+    if (!canEditCatalog) {
+      showSavedMessage("Tu rol no permite editar servicios de catálogo.");
+      return;
+    }
+
     setCatalogDraft({ ...service });
     setEditingCatalogId(service.id);
     setActiveTab("catalog");
   }
 
   function saveCatalogService() {
+    if (!canEditCatalog) {
+      showSavedMessage("Tu rol no permite guardar cambios de catálogo.");
+      return;
+    }
+
     if (!catalogDraft.name.trim()) {
       showSavedMessage("El servicio necesita nombre.");
       return;
@@ -587,6 +721,11 @@ export function CotizadorApp() {
   }
 
   function cloneServiceToCatalog(service: ServiceItem) {
+    if (!canEditCatalog) {
+      showSavedMessage("Tu rol no permite copiar servicios al catálogo.");
+      return;
+    }
+
     const cloned: ServiceItem = {
       ...service,
       id: makeId("svc-custom"),
@@ -604,6 +743,11 @@ export function CotizadorApp() {
   }
 
   function toggleCatalogService(service: ServiceItem) {
+    if (!canEditCatalog) {
+      showSavedMessage("Tu rol no permite activar o desactivar servicios.");
+      return;
+    }
+
     const updated: ServiceItem = { ...service, active: !service.active };
     const isBaseService = initialServices.some((baseService) => baseService.id === service.id);
 
@@ -617,6 +761,11 @@ export function CotizadorApp() {
   }
 
   function deleteCustomCatalogService(serviceId: string) {
+    if (!canEditCatalog) {
+      showSavedMessage("Tu rol no permite eliminar servicios personalizados.");
+      return;
+    }
+
     const confirmed = window.confirm("¿Eliminar este servicio personalizado? No se eliminarán cotizaciones ya guardadas.");
     if (!confirmed) return;
 
@@ -631,6 +780,11 @@ export function CotizadorApp() {
   }
 
   function resetBaseCatalogService(serviceId: string) {
+    if (!canEditCatalog) {
+      showSavedMessage("Tu rol no permite restaurar servicios base.");
+      return;
+    }
+
     const nextOverrides = { ...serviceOverrides };
     delete nextOverrides[serviceId];
     persistServiceOverrides(nextOverrides);
@@ -649,6 +803,11 @@ export function CotizadorApp() {
   }
 
   function createManualConcept() {
+    if (!canEditCurrentQuote) {
+      showSavedMessage(currentQuoteLocked ? "Cotización bloqueada. Crea una revisión para agregar conceptos." : "Tu rol no permite editar cotizaciones.");
+      return;
+    }
+
     if (!manualDraft.name.trim()) return;
     if (manualDraft.basePrice <= 0) return;
 
@@ -671,10 +830,20 @@ export function CotizadorApp() {
   }
 
   function updateItem(id: string, patch: Partial<QuoteItem>) {
+    if (!canEditCurrentQuote) {
+      showSavedMessage(currentQuoteLocked ? "Cotización bloqueada. Crea una revisión para editar conceptos." : "Tu rol no permite editar cotizaciones.");
+      return;
+    }
+
     setItems((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   }
 
   function removeItem(id: string) {
+    if (!canEditCurrentQuote) {
+      showSavedMessage(currentQuoteLocked ? "Cotización bloqueada. Crea una revisión para quitar conceptos." : "Tu rol no permite editar cotizaciones.");
+      return;
+    }
+
     setItems((current) => current.filter((item) => item.id !== id));
   }
 
@@ -695,16 +864,43 @@ export function CotizadorApp() {
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
       validUntil: validUntil || getDefaultValidUntil(),
+      revisionOf: existing?.revisionOf,
+      revisionNumber: existing?.revisionNumber,
+      archivedAt: existing?.archivedAt,
+      lockedAt: existing?.lockedAt,
     };
   }
 
   function saveQuote(status: QuoteStatus = quoteStatus) {
+    if (!canCreateQuotes && !canEditCurrentQuote) {
+      showSavedMessage("Tu rol no permite guardar cotizaciones.");
+      return;
+    }
+
+    if (currentQuoteLocked) {
+      showSavedMessage("Esta cotización ya fue enviada/cerrada. Crea una revisión para hacer cambios.");
+      return;
+    }
+
+    if ((status === "accepted" || status === "rejected") && !canChangeQuoteStatus) {
+      showSavedMessage("Sólo ADMIN o SUPERVISOR pueden aceptar o rechazar cotizaciones.");
+      return;
+    }
+
+    if (status === "sent" && !roleCan("edit_draft_quotes")) {
+      showSavedMessage("Tu rol no permite enviar cotizaciones.");
+      return;
+    }
+
     if (items.length === 0) {
       showSavedMessage("Agrega al menos un concepto antes de guardar.");
       return;
     }
 
-    const quote = buildSavedQuote(status);
+    const quote = {
+      ...buildSavedQuote(status),
+      lockedAt: status === "draft" ? undefined : (currentQuote?.lockedAt ?? new Date().toISOString()),
+    };
     const exists = savedQuotes.some((savedQuote) => savedQuote.id === quote.id);
     const nextQuotes = exists
       ? savedQuotes.map((savedQuote) => (savedQuote.id === quote.id ? quote : savedQuote))
@@ -730,6 +926,11 @@ export function CotizadorApp() {
   }
 
   function duplicateQuote(quote: SavedQuote) {
+    if (!canCreateQuotes) {
+      showSavedMessage("Tu rol no permite duplicar cotizaciones.");
+      return;
+    }
+
     const now = new Date().toISOString();
     const duplicatedItems = cloneQuoteItems(quote.items);
     const duplicatedTotals = calculateQuoteTotals(
@@ -749,15 +950,68 @@ export function CotizadorApp() {
       createdAt: now,
       updatedAt: now,
       validUntil: getDefaultValidUntil(),
+      revisionOf: undefined,
+      revisionNumber: undefined,
+      archivedAt: undefined,
+      lockedAt: undefined,
     };
 
     persistQuotes([duplicatedQuote, ...savedQuotes]);
     loadQuote(duplicatedQuote);
   }
 
+  function createQuoteRevision(quote: SavedQuote) {
+    if (!canCreateQuotes || !roleCan("edit_draft_quotes")) {
+      showSavedMessage("Tu rol no permite crear revisiones.");
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const revisionItems = cloneQuoteItems(quote.items);
+    const revisionTotals = calculateQuoteTotals(
+      revisionItems,
+      quote.mode,
+      quote.sourceCodeOption,
+      quote.rules,
+    );
+    const revisionNumber = getNextRevisionNumber(savedQuotes, quote);
+
+    const revisionQuote: SavedQuote = {
+      ...quote,
+      id: makeId("quote"),
+      folio: getNextRevisionFolio(savedQuotes, quote),
+      status: "draft",
+      items: revisionItems,
+      totals: revisionTotals,
+      createdAt: now,
+      updatedAt: now,
+      validUntil: getDefaultValidUntil(),
+      revisionOf: quote.revisionOf ?? quote.id,
+      revisionNumber,
+      archivedAt: undefined,
+      lockedAt: undefined,
+    };
+
+    persistQuotes([revisionQuote, ...savedQuotes]);
+    loadQuote(revisionQuote);
+    showSavedMessage(`Revisión ${revisionQuote.folio} creada como borrador.`);
+  }
+
   function deleteQuote(quoteId: string) {
     const quote = savedQuotes.find((savedQuote) => savedQuote.id === quoteId);
-    const confirmed = window.confirm(`¿Eliminar ${quote?.folio ?? "esta cotización"}? Esta acción no se puede deshacer.`);
+    if (!quote) return;
+
+    if (quote.status !== "draft" && quote.status !== "rejected") {
+      showSavedMessage("No se eliminan cotizaciones enviadas o aceptadas. Usa Archivar para ocultarlas del historial.");
+      return;
+    }
+
+    if (!roleCan("delete_draft_quotes")) {
+      showSavedMessage("Tu rol no permite eliminar cotizaciones.");
+      return;
+    }
+
+    const confirmed = window.confirm(`¿Eliminar ${quote.folio}? Esta acción no se puede deshacer.`);
     if (!confirmed) return;
 
     const nextQuotes = savedQuotes.filter((savedQuote) => savedQuote.id !== quoteId);
@@ -770,10 +1024,43 @@ export function CotizadorApp() {
     showSavedMessage("Cotización eliminada.");
   }
 
+  function archiveQuote(quoteId: string) {
+    const quote = savedQuotes.find((savedQuote) => savedQuote.id === quoteId);
+    if (!quote) return;
+
+    if (!roleCan("archive_locked_quotes")) {
+      showSavedMessage("Tu rol no permite archivar cotizaciones.");
+      return;
+    }
+
+    const confirmed = window.confirm(`¿Archivar ${quote.folio}? Quedará oculta del historial y reportes locales.`);
+    if (!confirmed) return;
+
+    const now = new Date().toISOString();
+    const nextQuotes = savedQuotes.map((savedQuote) =>
+      savedQuote.id === quoteId ? { ...savedQuote, archivedAt: now, updatedAt: now } : savedQuote,
+    );
+
+    persistQuotes(nextQuotes);
+
+    if (currentQuoteId === quoteId) {
+      resetQuote();
+    }
+
+    showSavedMessage("Cotización archivada.");
+  }
+
   function updateQuoteStatus(quoteId: string, status: QuoteStatus) {
+    if (!canChangeQuoteStatus) {
+      showSavedMessage("Sólo ADMIN o SUPERVISOR pueden cambiar estados desde historial.");
+      return;
+    }
+
     const now = new Date().toISOString();
     const nextQuotes = savedQuotes.map((quote) =>
-      quote.id === quoteId ? { ...quote, status, updatedAt: now } : quote,
+      quote.id === quoteId
+        ? { ...quote, status, lockedAt: status === "draft" ? undefined : (quote.lockedAt ?? now), updatedAt: now }
+        : quote,
     );
 
     persistQuotes(nextQuotes);
@@ -792,6 +1079,11 @@ export function CotizadorApp() {
   }
 
   function exportReportCsv() {
+    if (!canExportReports) {
+      showSavedMessage("Tu rol no permite exportar reportes.");
+      return;
+    }
+
     if (reportQuotes.length === 0) {
       showSavedMessage("No hay cotizaciones para exportar con esos filtros.");
       return;
@@ -888,6 +1180,11 @@ export function CotizadorApp() {
   }
 
   function resetQuote() {
+    if (!canCreateQuotes) {
+      showSavedMessage("Tu rol no permite crear cotizaciones.");
+      return;
+    }
+
     setClient(defaultClient);
     setMode("hybrid");
     setSourceCodeOption("none");
@@ -912,39 +1209,91 @@ export function CotizadorApp() {
         </section>
         <div className="pill-row">
           <span className="pill">UI V1 sin BD</span>
-          <span className="pill">Sprint 1.4</span>
-          <span className="pill">Reportes locales</span>
+          <span className="pill">Sprint 1.6</span>
+          <span className="pill">Reglas de negocio</span>
+          <span className="pill">Rol: {roleLabels[currentRole]}</span>
         </div>
       </header>
 
       {savedMessage && <div className="toast-message">{savedMessage}</div>}
 
+      <section className="card security-strip no-print">
+        <div>
+          <strong>Modo de permisos local: {roleLabels[currentRole]}</strong>
+          <p>{roleDescriptions[currentRole]} Esta es una simulación de UI; el login real va con backend, sesiones y roles de servidor.</p>
+        </div>
+        <div className="field role-field">
+          <label>Probar vista como</label>
+          <select value={currentRole} onChange={(event) => setCurrentRole(event.target.value as UserRole)}>
+            {(Object.keys(roleLabels) as UserRole[]).map((role) => (
+              <option key={role} value={role}>{roleLabels[role]}</option>
+            ))}
+          </select>
+        </div>
+      </section>
+
       <nav className="tabs" aria-label="Secciones del cotizador">
-        <button className={`tab-button ${activeTab === "quote" ? "active" : ""}`} onClick={() => setActiveTab("quote")}>
-          Nueva cotización
-        </button>
-        <button className={`tab-button ${activeTab === "history" ? "active" : ""}`} onClick={() => setActiveTab("history")}>
-          Historial ({savedQuotes.length})
-        </button>
-        <button className={`tab-button ${activeTab === "reports" ? "active" : ""}`} onClick={() => setActiveTab("reports")}>
-          Reportes
-        </button>
-        <button className={`tab-button ${activeTab === "preview" ? "active" : ""}`} onClick={() => setActiveTab("preview")}>
-          Vista / PDF
-        </button>
-        <button className={`tab-button ${activeTab === "catalog" ? "active" : ""}`} onClick={() => setActiveTab("catalog")}>
-          Catálogo local
-        </button>
-        <button className={`tab-button ${activeTab === "rules" ? "active" : ""}`} onClick={() => setActiveTab("rules")}>
-          Reglas de precio
-        </button>
-        <button className={`tab-button ${activeTab === "github" ? "active" : ""}`} onClick={() => setActiveTab("github")}>
-          GitHub / siguiente sprint
-        </button>
+        {availableTabs.includes("quote") && (
+          <button className={`tab-button ${activeTab === "quote" ? "active" : ""}`} onClick={() => setActiveTab("quote")}>
+            Nueva cotización
+          </button>
+        )}
+        {availableTabs.includes("history") && (
+          <button className={`tab-button ${activeTab === "history" ? "active" : ""}`} onClick={() => setActiveTab("history")}>
+            Historial ({sortedSavedQuotes.length})
+          </button>
+        )}
+        {availableTabs.includes("reports") && (
+          <button className={`tab-button ${activeTab === "reports" ? "active" : ""}`} onClick={() => setActiveTab("reports")}>
+            Reportes
+          </button>
+        )}
+        {availableTabs.includes("preview") && (
+          <button className={`tab-button ${activeTab === "preview" ? "active" : ""}`} onClick={() => setActiveTab("preview")}>
+            Vista / PDF
+          </button>
+        )}
+        {availableTabs.includes("catalog") && (
+          <button className={`tab-button ${activeTab === "catalog" ? "active" : ""}`} onClick={() => setActiveTab("catalog")}>
+            Catálogo local
+          </button>
+        )}
+        {availableTabs.includes("rules") && (
+          <button className={`tab-button ${activeTab === "rules" ? "active" : ""}`} onClick={() => setActiveTab("rules")}>
+            Reglas de precio
+          </button>
+        )}
+        {availableTabs.includes("security") && (
+          <button className={`tab-button ${activeTab === "security" ? "active" : ""}`} onClick={() => setActiveTab("security")}>
+            Seguridad / roles
+          </button>
+        )}
+        {availableTabs.includes("github") && (
+          <button className={`tab-button ${activeTab === "github" ? "active" : ""}`} onClick={() => setActiveTab("github")}>
+            GitHub / siguiente sprint
+          </button>
+        )}
       </nav>
 
       {activeTab === "quote" && (
         <section className="grid two">
+          {currentQuoteLocked && (
+            <section className="card lock-banner">
+              <div>
+                <strong>Cotización bloqueada por regla de negocio</strong>
+                <p>{currentQuote?.folio} está como {currentQuote ? statusLabels[currentQuote.status] : "Bloqueada"}. No se edita directo para no alterar lo enviado al cliente. Crea una revisión R2/R3 para cambiar alcance, precio o fechas.</p>
+              </div>
+              <button className="btn primary" onClick={() => currentQuote && createQuoteRevision(currentQuote)}>Crear revisión</button>
+            </section>
+          )}
+          {!canCreateQuotes && (
+            <section className="card lock-banner warning">
+              <div>
+                <strong>Vista sin permisos de edición</strong>
+                <p>Tu rol actual puede consultar, pero no crear o modificar cotizaciones.</p>
+              </div>
+            </section>
+          )}
           <div className="grid">
             <section className="card">
               <div className="card-title">
@@ -961,27 +1310,27 @@ export function CotizadorApp() {
               <div className="form-grid">
                 <div className="field">
                   <label>Nombre del contacto</label>
-                  <input value={client.clientName} onChange={(event) => setClient({ ...client, clientName: event.target.value })} placeholder="Ej. Dr. Hernández" />
+                  <input disabled={!canEditCurrentQuote} value={client.clientName} onChange={(event) => setClient({ ...client, clientName: event.target.value })} placeholder="Ej. Dr. Hernández" />
                 </div>
                 <div className="field">
                   <label>Empresa / negocio</label>
-                  <input value={client.company} onChange={(event) => setClient({ ...client, company: event.target.value })} placeholder="Ej. Clínica Dental Sonrisas" />
+                  <input disabled={!canEditCurrentQuote} value={client.company} onChange={(event) => setClient({ ...client, company: event.target.value })} placeholder="Ej. Clínica Dental Sonrisas" />
                 </div>
                 <div className="field">
                   <label>WhatsApp / teléfono</label>
-                  <input value={client.phone} onChange={(event) => setClient({ ...client, phone: event.target.value })} placeholder="656 ..." />
+                  <input disabled={!canEditCurrentQuote} value={client.phone} onChange={(event) => setClient({ ...client, phone: event.target.value })} placeholder="656 ..." />
                 </div>
                 <div className="field">
                   <label>Correo</label>
-                  <input value={client.email} onChange={(event) => setClient({ ...client, email: event.target.value })} placeholder="cliente@empresa.com" />
+                  <input disabled={!canEditCurrentQuote} value={client.email} onChange={(event) => setClient({ ...client, email: event.target.value })} placeholder="cliente@empresa.com" />
                 </div>
                 <div className="field">
                   <label>Vigencia</label>
-                  <input type="date" value={validUntil} onChange={(event) => setValidUntil(event.target.value)} />
+                  <input disabled={!canEditCurrentQuote} type="date" value={validUntil} onChange={(event) => setValidUntil(event.target.value)} />
                 </div>
                 <div className="field">
                   <label>Estado</label>
-                  <select value={quoteStatus} onChange={(event) => setQuoteStatus(event.target.value as QuoteStatus)}>
+                  <select disabled={!canChangeQuoteStatus} value={quoteStatus} onChange={(event) => setQuoteStatus(event.target.value as QuoteStatus)}>
                     <option value="draft">Borrador</option>
                     <option value="sent">Enviada</option>
                     <option value="accepted">Aceptada</option>
@@ -990,11 +1339,12 @@ export function CotizadorApp() {
                 </div>
                 <div className="field full">
                   <label>Nombre del proyecto</label>
-                  <input value={client.projectName} onChange={(event) => setClient({ ...client, projectName: event.target.value })} placeholder="Ej. Sistema de control de pacientes y visitas" />
+                  <input disabled={!canEditCurrentQuote} value={client.projectName} onChange={(event) => setClient({ ...client, projectName: event.target.value })} placeholder="Ej. Sistema de control de pacientes y visitas" />
                 </div>
                 <div className="field">
                   <label>Fecha objetivo de entrega</label>
                   <input
+                  disabled={!canEditCurrentQuote}
                     type="date"
                     value={client.targetDeliveryDate ?? ""}
                     onChange={(event) => setClient({ ...client, targetDeliveryDate: event.target.value })}
@@ -1002,7 +1352,7 @@ export function CotizadorApp() {
                 </div>
                 <div className="field full">
                   <label>Notas del levantamiento</label>
-                  <textarea value={client.notes} onChange={(event) => setClient({ ...client, notes: event.target.value })} placeholder="Qué pidió el cliente, riesgos, dudas, cosas pendientes..." />
+                  <textarea disabled={!canEditCurrentQuote} value={client.notes} onChange={(event) => setClient({ ...client, notes: event.target.value })} placeholder="Qué pidió el cliente, riesgos, dudas, cosas pendientes..." />
                 </div>
               </div>
             </section>
@@ -1018,7 +1368,7 @@ export function CotizadorApp() {
               <div className="form-grid">
                 <div className="field">
                   <label>Modalidad</label>
-                  <select value={mode} onChange={(event) => setMode(event.target.value as QuoteMode)}>
+                  <select disabled={!canEditCurrentQuote} value={mode} onChange={(event) => setMode(event.target.value as QuoteMode)}>
                     <option value="one_time">Venta única</option>
                     <option value="rental">Renta mensual</option>
                     <option value="hybrid">Híbrido</option>
@@ -1028,7 +1378,7 @@ export function CotizadorApp() {
                   <label>Código fuente</label>
                   <select
                     value={mode === "rental" ? "none" : sourceCodeOption}
-                    disabled={mode === "rental"}
+                    disabled={!canEditCurrentQuote || mode === "rental"}
                     onChange={(event) => setSourceCodeOption(event.target.value as SourceCodeOption)}
                   >
                     <option value="none">No incluir</option>
@@ -1054,6 +1404,7 @@ export function CotizadorApp() {
               <div className="search-area">
                 <label>Buscar concepto</label>
                 <input
+                  disabled={!canEditCurrentQuote}
                   value={query}
                   onChange={(event) => {
                     setQuery(event.target.value);
@@ -1075,7 +1426,7 @@ export function CotizadorApp() {
                           <span className="meta">{service.estimatedHours} h</span>
                         </div>
                       </div>
-                      <button className="btn primary" onClick={() => addService(service)}>Agregar</button>
+                      <button className="btn primary" disabled={!canEditCurrentQuote} onClick={() => addService(service)}>Agregar</button>
                     </article>
                   ))}
                 </div>
@@ -1092,11 +1443,11 @@ export function CotizadorApp() {
                     <div className="form-grid">
                       <div className="field">
                         <label>Nombre</label>
-                        <input value={manualDraft.name} onChange={(event) => setManualDraft({ ...manualDraft, name: event.target.value })} />
+                        <input disabled={!canEditCurrentQuote} value={manualDraft.name} onChange={(event) => setManualDraft({ ...manualDraft, name: event.target.value })} />
                       </div>
                       <div className="field">
                         <label>Categoría</label>
-                        <select value={manualDraft.category} onChange={(event) => setManualDraft({ ...manualDraft, category: event.target.value as ServiceCategory })}>
+                        <select disabled={!canEditCurrentQuote} value={manualDraft.category} onChange={(event) => setManualDraft({ ...manualDraft, category: event.target.value as ServiceCategory })}>
                           {Object.entries(categoryLabels).map(([value, label]) => (
                             <option key={value} value={value}>{label}</option>
                           ))}
@@ -1104,7 +1455,7 @@ export function CotizadorApp() {
                       </div>
                       <div className="field">
                         <label>Tipo de cobro</label>
-                        <select value={manualDraft.billingType} onChange={(event) => setManualDraft({ ...manualDraft, billingType: event.target.value as BillingType })}>
+                        <select disabled={!canEditCurrentQuote} value={manualDraft.billingType} onChange={(event) => setManualDraft({ ...manualDraft, billingType: event.target.value as BillingType })}>
                           <option value="one_time">Único</option>
                           <option value="monthly">Mensual</option>
                           <option value="annual">Anual</option>
@@ -1113,27 +1464,27 @@ export function CotizadorApp() {
                       </div>
                       <div className="field">
                         <label>Precio</label>
-                        <input type="number" min="0" value={manualDraft.basePrice} onChange={(event) => setManualDraft({ ...manualDraft, basePrice: safeNumber(event.target.value) })} />
+                        <input disabled={!canEditCurrentQuote} type="number" min="0" value={manualDraft.basePrice} onChange={(event) => setManualDraft({ ...manualDraft, basePrice: safeNumber(event.target.value) })} />
                       </div>
                       <div className="field">
                         <label>Horas estimadas</label>
-                        <input type="number" min="0" value={manualDraft.estimatedHours} onChange={(event) => setManualDraft({ ...manualDraft, estimatedHours: safeNumber(event.target.value, 1) })} />
+                        <input disabled={!canEditCurrentQuote} type="number" min="0" value={manualDraft.estimatedHours} onChange={(event) => setManualDraft({ ...manualDraft, estimatedHours: safeNumber(event.target.value, 1) })} />
                       </div>
                       <div className="field">
                         <label>Guardar en catálogo</label>
-                        <select value={saveManualToCatalog ? "yes" : "no"} onChange={(event) => setSaveManualToCatalog(event.target.value === "yes")}>
+                        <select disabled={!canEditCurrentQuote} value={saveManualToCatalog ? "yes" : "no"} onChange={(event) => setSaveManualToCatalog(event.target.value === "yes")}>
                           <option value="yes">Sí, usar en futuras cotizaciones</option>
                           <option value="no">No, sólo esta cotización</option>
                         </select>
                       </div>
                       <div className="field full">
                         <label>Descripción para cliente</label>
-                        <textarea value={manualDraft.descriptionClient} onChange={(event) => setManualDraft({ ...manualDraft, descriptionClient: event.target.value })} />
+                        <textarea disabled={!canEditCurrentQuote} value={manualDraft.descriptionClient} onChange={(event) => setManualDraft({ ...manualDraft, descriptionClient: event.target.value })} />
                       </div>
                     </div>
 
                     <div style={{ marginTop: 14 }}>
-                      <button className="btn success" disabled={!manualDraft.name.trim() || manualDraft.basePrice <= 0} onClick={createManualConcept}>
+                      <button className="btn success" disabled={!canEditCurrentQuote || !manualDraft.name.trim() || manualDraft.basePrice <= 0} onClick={createManualConcept}>
                         Guardar y agregar a cotización
                       </button>
                     </div>
@@ -1166,13 +1517,13 @@ export function CotizadorApp() {
                       <div className="item-controls">
                         <div className="field">
                           <label>Cant.</label>
-                          <input className="small-input" type="number" min="1" value={item.quantity} onChange={(event) => updateItem(item.id, { quantity: Math.max(1, safeNumber(event.target.value, 1)) })} />
+                          <input disabled={!canEditCurrentQuote} className="small-input" type="number" min="1" value={item.quantity} onChange={(event) => updateItem(item.id, { quantity: Math.max(1, safeNumber(event.target.value, 1)) })} />
                         </div>
                         <div className="field">
                           <label>Precio</label>
-                          <input className="small-input" type="number" min="0" value={item.unitPrice} onChange={(event) => updateItem(item.id, { unitPrice: safeNumber(event.target.value) })} />
+                          <input disabled={!canEditCurrentQuote} className="small-input" type="number" min="0" value={item.unitPrice} onChange={(event) => updateItem(item.id, { unitPrice: safeNumber(event.target.value) })} />
                         </div>
-                        <button className="btn danger" onClick={() => removeItem(item.id)}>Quitar</button>
+                        <button className="btn danger" disabled={!canEditCurrentQuote} onClick={() => removeItem(item.id)}>Quitar</button>
                       </div>
                     </article>
                   ))}
@@ -1246,9 +1597,9 @@ export function CotizadorApp() {
                   )}
                 </div>
                 <div className="quote-actions stretch">
-                  <button className="btn ghost" onClick={() => saveQuote("draft")}>Guardar borrador</button>
-                  <button className="btn primary" onClick={() => saveQuote("sent")}>Guardar como enviada</button>
-                  <button className="btn success" onClick={() => saveQuote("accepted")}>Marcar aceptada</button>
+                  <button className="btn ghost" disabled={!canEditCurrentQuote} onClick={() => saveQuote("draft")}>Guardar borrador</button>
+                  <button className="btn primary" disabled={!canEditCurrentQuote} onClick={() => saveQuote("sent")}>Guardar como enviada</button>
+                  <button className="btn success" disabled={!canEditCurrentQuote || !canChangeQuoteStatus} onClick={() => saveQuote("accepted")}>Marcar aceptada</button>
                   <button className="btn print" onClick={openPrintPreview}>Vista / PDF</button>
                 </div>
               </div>
@@ -1273,7 +1624,7 @@ export function CotizadorApp() {
           <section className="kpi-row">
             <article className="card soft">
               <div className="kpi-label">Cotizaciones</div>
-              <strong className="kpi-value">{savedQuotes.length}</strong>
+              <strong className="kpi-value">{sortedSavedQuotes.length}</strong>
             </article>
             <article className="card soft">
               <div className="kpi-label">Aceptadas</div>
@@ -1295,7 +1646,7 @@ export function CotizadorApp() {
                 <h2>Historial de cotizaciones</h2>
                 <p>Guardado local en este navegador. Después se migrará a base de datos.</p>
               </div>
-              <button className="btn ghost" onClick={resetQuote}>Nueva cotización</button>
+              <button className="btn ghost" disabled={!canCreateQuotes} onClick={resetQuote}>Nueva cotización</button>
             </div>
 
             {sortedSavedQuotes.length === 0 ? (
@@ -1322,15 +1673,20 @@ export function CotizadorApp() {
                       </div>
                     </div>
                     <div className="history-actions">
-                      <select value={quote.status} onChange={(event) => updateQuoteStatus(quote.id, event.target.value as QuoteStatus)}>
+                      <select disabled={!canChangeQuoteStatus} value={quote.status} onChange={(event) => updateQuoteStatus(quote.id, event.target.value as QuoteStatus)}>
                         <option value="draft">Borrador</option>
                         <option value="sent">Enviada</option>
                         <option value="accepted">Aceptada</option>
                         <option value="rejected">Rechazada</option>
                       </select>
                       <button className="btn primary" onClick={() => loadQuote(quote)}>Abrir</button>
-                      <button className="btn ghost" onClick={() => duplicateQuote(quote)}>Duplicar</button>
-                      <button className="btn danger" onClick={() => deleteQuote(quote.id)}>Eliminar</button>
+                      <button className="btn ghost" disabled={!canCreateQuotes} onClick={() => duplicateQuote(quote)}>Duplicar</button>
+                      {quote.status !== "draft" && <button className="btn primary" disabled={!canCreateQuotes} onClick={() => createQuoteRevision(quote)}>Crear revisión</button>}
+                      {(quote.status === "draft" || quote.status === "rejected") ? (
+                        <button className="btn danger" disabled={!roleCan("delete_draft_quotes")} onClick={() => deleteQuote(quote.id)}>Eliminar</button>
+                      ) : (
+                        <button className="btn danger" disabled={!roleCan("archive_locked_quotes")} onClick={() => archiveQuote(quote.id)}>Archivar</button>
+                      )}
                     </div>
                   </article>
                 ))}
@@ -1350,7 +1706,7 @@ export function CotizadorApp() {
               </div>
               <div className="quote-actions no-print">
                 <button className="btn ghost" onClick={clearReportFilters}>Limpiar filtros</button>
-                <button className="btn success" onClick={exportReportCsv}>Exportar datos CSV</button>
+                <button className="btn success" disabled={!canExportReports} onClick={exportReportCsv}>Exportar datos CSV</button>
                 <button className="btn print" onClick={printReportsSummary}>PDF resumen</button>
                 <button className="btn ghost" onClick={printReportsDetail}>PDF detalle</button>
               </div>
@@ -1640,7 +1996,7 @@ export function CotizadorApp() {
               </div>
               <div className="quote-actions">
                 <button className="btn ghost" onClick={() => setActiveTab("quote")}>Volver a editar</button>
-                <button className="btn primary" onClick={() => saveQuote("draft")}>Guardar borrador</button>
+                <button className="btn primary" disabled={!canEditCurrentQuote} onClick={() => saveQuote("draft")}>Guardar borrador</button>
                 <button className="btn success" onClick={printQuote}>Imprimir / Guardar PDF</button>
               </div>
             </div>
@@ -1755,6 +2111,86 @@ export function CotizadorApp() {
               <span>Documento generado desde Cotizador Pro</span>
             </footer>
           </article>
+        </section>
+      )}
+
+
+      {activeTab === "security" && (
+        <section className="grid">
+          <section className="card">
+            <div className="card-title">
+              <div>
+                <h2>Reglas de seguridad y permisos</h2>
+                <p>Preparación para el login real. Por ahora sólo simula vistas y candados en la UI local.</p>
+              </div>
+            </div>
+            <div className="notice warning">
+              Esto no sustituye seguridad real. El backend debe validar permisos otra vez, usar sesiones seguras, rate limit, WAF/CDN, consultas parametrizadas y auditoría. La UI sólo ayuda a no equivocarse en el flujo.
+            </div>
+          </section>
+
+          <section className="card">
+            <div className="card-title">
+              <div>
+                <h2>Rol actual</h2>
+                <p>{roleLabels[currentRole]} · {roleDescriptions[currentRole]}</p>
+              </div>
+            </div>
+            <div className="permission-grid">
+              {(Object.keys(roleLabels) as UserRole[]).map((role) => (
+                <article className={`permission-card ${currentRole === role ? "active" : ""}`} key={role}>
+                  <div className="history-heading">
+                    <h4>{roleLabels[role]}</h4>
+                    {currentRole === role && <span className="status-badge accepted">Actual</span>}
+                  </div>
+                  <p>{roleDescriptions[role]}</p>
+                  <div className="permission-list">
+                    {rolePermissions[role].length === 0 ? (
+                      <span>Consulta limitada sin edición.</span>
+                    ) : (
+                      rolePermissions[role].map((permission) => <span key={permission}>{permission.replaceAll("_", " ")}</span>)
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="grid two">
+            <section className="card">
+              <div className="card-title">
+                <div>
+                  <h2>Reglas aplicadas desde este sprint</h2>
+                  <p>Candados locales para evitar errores comerciales.</p>
+                </div>
+              </div>
+              <ul className="rules-list">
+                <li>Las cotizaciones enviadas, aceptadas o rechazadas quedan bloqueadas.</li>
+                <li>Para cambiar una cotización bloqueada se crea revisión R2/R3.</li>
+                <li>No se eliminan cotizaciones enviadas o aceptadas; se archivan.</li>
+                <li>VENTAS no puede aceptar/rechazar desde historial; eso queda para ADMIN/SUPERVISOR.</li>
+                <li>OPERACIÓN y LECTURA no modifican precios, catálogo ni cotizaciones.</li>
+                <li>El PDF de cliente sigue separado de datos internos.</li>
+              </ul>
+            </section>
+
+            <section className="card">
+              <div className="card-title">
+                <div>
+                  <h2>Pendiente para seguridad real</h2>
+                  <p>Esto se programa cuando entremos a backend.</p>
+                </div>
+              </div>
+              <ul className="rules-list">
+                <li>Login real con usuarios, hash de contraseña y sesiones seguras.</li>
+                <li>Validación de permisos en servidor, no sólo en la pantalla.</li>
+                <li>Base de datos con auditoría de cambios.</li>
+                <li>Protección anti SQL Injection con ORM/consultas parametrizadas.</li>
+                <li>Rate limit, WAF/CDN y límites de payload contra abuso/DDoS.</li>
+                <li>Backups, variables .env y secretos fuera de GitHub.</li>
+              </ul>
+            </section>
+          </section>
         </section>
       )}
 

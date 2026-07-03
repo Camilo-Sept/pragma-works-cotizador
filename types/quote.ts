@@ -4,6 +4,8 @@ export type QuoteMode = "one_time" | "rental" | "hybrid";
 
 export type SourceCodeOption = "none" | "delivery_after_payment" | "full_buyout";
 
+export type UserRole = "admin" | "supervisor" | "ventas" | "operacion" | "lectura";
+
 export type QuoteStatus = "draft" | "sent" | "accepted" | "rejected";
 
 export type ServiceCategory =
@@ -102,4 +104,8 @@ export type SavedQuote = {
   createdAt: string;
   updatedAt: string;
   validUntil: string;
+  revisionOf?: string;
+  revisionNumber?: number;
+  archivedAt?: string;
+  lockedAt?: string;
 };

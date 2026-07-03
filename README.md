@@ -188,3 +188,16 @@ Completado en rama de trabajo local:
 - PostgreSQL.
 - Deploy.
 - PWA instalable.
+
+## Completado en Sprint 1.6
+
+- Simulación local de roles: ADMIN, SUPERVISOR, VENTAS, OPERACIÓN y LECTURA.
+- Pestañas visibles según rol.
+- Candados de negocio para cotizaciones enviadas, aceptadas y rechazadas.
+- Creación de revisiones R2/R3 para modificar cotizaciones bloqueadas.
+- Bloqueo de eliminación para cotizaciones enviadas o aceptadas; se archivan en lugar de borrar.
+- Bloqueo de edición de catálogo y reglas para roles sin permiso.
+- Nueva pestaña **Seguridad / roles** con matriz de permisos y reglas aplicadas.
+- Preparación conceptual para login real con backend.
+
+> Nota: estos permisos todavía son de interfaz local. La seguridad real debe validarse en backend con sesiones, roles, auditoría, rate limits y base de datos.

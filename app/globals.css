@@ -1375,3 +1375,108 @@ select option {
     grid-template-columns: 0.7fr 1.7fr 0.8fr 0.8fr 0.8fr !important;
   }
 }
+
+/* Sprint 1.6 - Reglas de negocio y permisos locales */
+.security-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-color: rgba(47, 140, 255, 0.35);
+  background: rgba(47, 140, 255, 0.08);
+}
+
+.security-strip p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.role-field {
+  min-width: 220px;
+}
+
+.lock-banner {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-color: rgba(246, 200, 95, 0.5);
+  background: rgba(246, 200, 95, 0.08);
+}
+
+.lock-banner.warning {
+  border-color: rgba(255, 107, 107, 0.45);
+  background: rgba(255, 107, 107, 0.08);
+}
+
+.lock-banner p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.permission-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+}
+
+.permission-card {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.permission-card.active {
+  border-color: rgba(47, 140, 255, 0.65);
+  background: rgba(47, 140, 255, 0.08);
+}
+
+.permission-card p {
+  min-height: 44px;
+  color: var(--muted);
+}
+
+.permission-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.permission-list span {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-transform: capitalize;
+}
+
+.rules-list {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+@media (max-width: 760px) {
+  .security-strip,
+  .lock-banner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .role-field {
+    min-width: 100%;
+  }
+}
