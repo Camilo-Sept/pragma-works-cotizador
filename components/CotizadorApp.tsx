@@ -116,7 +116,7 @@ function formatDate(value: string) {
 }
 
 export function CotizadorApp() {
-  const [activeTab, setActiveTab] = useState<"quote" | "history" | "catalog" | "rules" | "github">("quote");
+  const [activeTab, setActiveTab] = useState<"quote" | "history" | "preview" | "catalog" | "rules" | "github">("quote");
   const [client, setClient] = useState<ClientDraft>(defaultClient);
   const [mode, setMode] = useState<QuoteMode>("hybrid");
   const [sourceCodeOption, setSourceCodeOption] = useState<SourceCodeOption>("none");
@@ -367,6 +367,14 @@ export function CotizadorApp() {
     window.setTimeout(() => setCopied(false), 1600);
   }
 
+  function openPrintPreview() {
+    setActiveTab("preview");
+  }
+
+  function printQuote() {
+    window.print();
+  }
+
   function resetQuote() {
     setClient(defaultClient);
     setMode("hybrid");
@@ -392,8 +400,8 @@ export function CotizadorApp() {
         </section>
         <div className="pill-row">
           <span className="pill">UI V1 sin BD</span>
-          <span className="pill">Sprint 1.1</span>
-          <span className="pill">Guardado local</span>
+          <span className="pill">Sprint 1.2</span>
+          <span className="pill">Vista imprimible</span>
         </div>
       </header>
 
@@ -405,6 +413,9 @@ export function CotizadorApp() {
         </button>
         <button className={`tab-button ${activeTab === "history" ? "active" : ""}`} onClick={() => setActiveTab("history")}>
           Historial ({savedQuotes.length})
+        </button>
+        <button className={`tab-button ${activeTab === "preview" ? "active" : ""}`} onClick={() => setActiveTab("preview")}>
+          Vista / PDF
         </button>
         <button className={`tab-button ${activeTab === "catalog" ? "active" : ""}`} onClick={() => setActiveTab("catalog")}>
           Catálogo local
@@ -715,6 +726,7 @@ export function CotizadorApp() {
                   <button className="btn ghost" onClick={() => saveQuote("draft")}>Guardar borrador</button>
                   <button className="btn primary" onClick={() => saveQuote("sent")}>Guardar como enviada</button>
                   <button className="btn success" onClick={() => saveQuote("accepted")}>Marcar aceptada</button>
+                  <button className="btn print" onClick={openPrintPreview}>Vista / PDF</button>
                 </div>
               </div>
             </section>
@@ -802,6 +814,133 @@ export function CotizadorApp() {
               </div>
             )}
           </section>
+        </section>
+      )}
+
+      {activeTab === "preview" && (
+        <section className="grid printable-section">
+          <div className="card no-print">
+            <div className="card-title">
+              <div>
+                <h2>Vista formal de cotización</h2>
+                <p>Revisa la propuesta antes de imprimirla o guardarla como PDF desde el navegador.</p>
+              </div>
+              <div className="quote-actions">
+                <button className="btn ghost" onClick={() => setActiveTab("quote")}>Volver a editar</button>
+                <button className="btn primary" onClick={() => saveQuote("draft")}>Guardar borrador</button>
+                <button className="btn success" onClick={printQuote}>Imprimir / Guardar PDF</button>
+              </div>
+            </div>
+            <div className="notice info">
+              Para generar PDF: presiona <strong>Imprimir / Guardar PDF</strong> y en el cuadro de impresión selecciona <strong>Guardar como PDF</strong>. No se agregó librería externa todavía para mantener el sprint simple.
+            </div>
+          </div>
+
+          <article className="print-page">
+            <header className="print-header">
+              <div>
+                <div className="print-brand">
+                  <span className="print-brand-mark">PW</span>
+                  <div>
+                    <h1>{companyProfile.name}</h1>
+                    <p>{companyProfile.descriptor}</p>
+                  </div>
+                </div>
+                <p className="print-slogan">{companyProfile.slogan}</p>
+              </div>
+              <div className="print-meta-box">
+                <strong>Cotización</strong>
+                <span>{currentQuote?.folio ?? "PRELIMINAR"}</span>
+                <small>Fecha: {formatDate(new Date().toISOString().slice(0, 10))}</small>
+                <small>Vigencia: {validUntil ? formatDate(validUntil) : "Pendiente"}</small>
+              </div>
+            </header>
+
+            <section className="print-section two-columns-print">
+              <div>
+                <h2>Cliente</h2>
+                <p><strong>Empresa:</strong> {client.company || "Pendiente"}</p>
+                <p><strong>Contacto:</strong> {client.clientName || "Pendiente"}</p>
+                <p><strong>Teléfono:</strong> {client.phone || "Pendiente"}</p>
+                <p><strong>Correo:</strong> {client.email || "Pendiente"}</p>
+              </div>
+              <div>
+                <h2>Proyecto</h2>
+                <p><strong>Nombre:</strong> {client.projectName || "Pendiente de definir"}</p>
+                <p><strong>Modalidad:</strong> {formatQuoteMode(mode)}</p>
+                <p><strong>Código fuente:</strong> {formatSourceCodeOption(mode === "rental" ? "none" : sourceCodeOption)}</p>
+                <p><strong>Ciudad:</strong> {companyProfile.city}</p>
+              </div>
+            </section>
+
+            {client.notes && (
+              <section className="print-section">
+                <h2>Notas del levantamiento</h2>
+                <p>{client.notes}</p>
+              </section>
+            )}
+
+            <section className="print-section">
+              <h2>Servicios incluidos</h2>
+              {items.length === 0 ? (
+                <p className="print-empty">No hay conceptos agregados todavía.</p>
+              ) : (
+                <table className="print-table">
+                  <thead>
+                    <tr>
+                      <th>Concepto</th>
+                      <th>Tipo</th>
+                      <th>Cant.</th>
+                      <th>Precio unitario</th>
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((item) => (
+                      <tr key={item.id}>
+                        <td>
+                          <strong>{item.name}</strong>
+                          <span>{categoryLabels[item.category]}{item.requiresApproval ? " · sujeto a validación interna" : ""}</span>
+                        </td>
+                        <td>{formatBillingType(item.billingType)}</td>
+                        <td>{item.quantity}</td>
+                        <td>{formatCurrency(item.unitPrice)}</td>
+                        <td>{formatCurrency(item.unitPrice * item.quantity)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </section>
+
+            <section className="print-section print-totals-section">
+              <div className="print-notes">
+                <h2>Condiciones y notas</h2>
+                <ul>
+                  {totals.commercialNotes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="print-totals-box">
+                <div><span>Subtotal único</span><strong>{formatCurrency(totals.oneTimeSubtotal)}</strong></div>
+                <div><span>Ajustes comerciales</span><strong>{formatCurrency(totals.riskCharge + totals.urgencyCharge + totals.commissionCharge - totals.discountAmount + totals.sourceCodeCharge)}</strong></div>
+                <div className="grand-total"><span>Pago inicial sugerido</span><strong>{formatCurrency(totals.suggestedInitialPayment)}</strong></div>
+                {totals.suggestedMonthlyPayment > 0 && <div><span>Mensualidad sugerida</span><strong>{formatCurrency(totals.suggestedMonthlyPayment)}</strong></div>}
+                {totals.suggestedAnnualRenewal > 0 && <div><span>Renovación anual sugerida</span><strong>{formatCurrency(totals.suggestedAnnualRenewal)}</strong></div>}
+              </div>
+            </section>
+
+            <section className="print-section confidentiality-box">
+              <h2>Confidencialidad</h2>
+              <p>{companyProfile.confidentialityDisclaimer}</p>
+            </section>
+
+            <footer className="print-footer">
+              <span>{companyProfile.name} · {companyProfile.descriptor}</span>
+              <span>Documento generado desde Cotizador Pro</span>
+            </footer>
+          </article>
         </section>
       )}
 
@@ -902,13 +1041,13 @@ export function CotizadorApp() {
             <div className="card-title">
               <div>
                 <h2>GitHub</h2>
-                <p>Comandos sugeridos para cerrar el Sprint 1.1.</p>
+                <p>Comandos sugeridos para cerrar el Sprint 1.2.</p>
               </div>
             </div>
             <pre className="preview">{`git status
 git add .
-git commit -m "feat: agregar guardado local de cotizaciones"
-git push -u origin sprint-1-1-guardar-cotizaciones`}</pre>
+git commit -m "feat: agregar vista imprimible de cotizacion"
+git push -u origin sprint-1-2-vista-pdf`}</pre>
           </section>
           <section className="card">
             <div className="card-title">
@@ -918,7 +1057,7 @@ git push -u origin sprint-1-1-guardar-cotizaciones`}</pre>
               </div>
             </div>
             <div className="grid">
-              <div className="service-row"><div><h4>Sprint 1.2</h4><p>Generar vista imprimible / PDF sin base de datos.</p></div></div>
+              <div className="service-row"><div><h4>Sprint 1.2</h4><p>Vista imprimible / PDF desde navegador.</p></div></div>
               <div className="service-row"><div><h4>Sprint 1.3</h4><p>Reportes simples desde cotizaciones guardadas.</p></div></div>
               <div className="service-row"><div><h4>Sprint 2</h4><p>Agregar login, base de datos y catálogo administrable.</p></div></div>
               <div className="service-row"><div><h4>Sprint 3</h4><p>Docker, PostgreSQL, deploy y PWA instalable.</p></div></div>
@@ -928,7 +1067,7 @@ git push -u origin sprint-1-1-guardar-cotizaciones`}</pre>
       )}
 
       <p className="footer-note">
-        {companyProfile.name} · Sprint 1.1 · Guardado local · Sin datos sensibles · Base limpia para GitHub.
+        {companyProfile.name} · Sprint 1.2 · Vista imprimible · Sin datos sensibles · Base limpia para GitHub.
       </p>
     </main>
   );
