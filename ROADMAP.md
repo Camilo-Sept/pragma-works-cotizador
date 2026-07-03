@@ -4,6 +4,14 @@
 
 UI V1 funcional sin backend.
 
+## Completado en Sprint 1.2
+
+- Vista formal de cotización.
+- Botón de vista previa / PDF desde la pantalla de cotización.
+- Botón de imprimir / guardar como PDF usando el navegador.
+- Plantilla con datos de cliente, proyecto, conceptos, totales, condiciones y confidencialidad.
+- Estilos especiales para impresión.
+
 ## Completado en Sprint 1.1
 
 - Guardado local de cotizaciones.
@@ -18,6 +26,7 @@ UI V1 funcional sin backend.
 - Validar reglas de cálculo.
 - Validar que el flujo de venta sea entendible para vendedor.
 - Validar resumen de WhatsApp.
+- Validar que la vista imprimible sea clara para cliente final.
 - Validar conceptos de mantenimiento y confidencialidad.
 
 ## Orden correcto

@@ -52,7 +52,7 @@ Esta versión está hecha **a propósito sin Docker, Prisma, PostgreSQL, login n
 - Docker.
 - Autenticación.
 - Roles.
-- PDF real.
+- PDF generado con librería dedicada.
 - Guardado histórico de cotizaciones en servidor.
   - La V1.1 guarda localmente en el navegador.
 - Deploy.
@@ -140,9 +140,15 @@ Completado en rama de trabajo local:
 
 ### Sprint 1.2
 
-- Vista imprimible.
-- Generación básica de PDF.
-- Plantilla formal de cotización.
+- Vista imprimible. ✅
+- Opción de imprimir / guardar como PDF desde el navegador. ✅
+- Plantilla formal de cotización. ✅
+
+### Sprint 1.3
+
+- Reportes simples desde historial local.
+- Filtros por estado de cotización.
+- Totales por estatus.
 
 ### Sprint 2
 

@@ -607,3 +607,328 @@ select option {
     grid-template-columns: 1fr;
   }
 }
+
+/* Sprint 1.2 - Vista imprimible / PDF */
+.btn.print {
+  background: rgba(246, 200, 95, 0.14);
+  border-color: rgba(246, 200, 95, 0.42);
+  color: #ffe2a3;
+}
+
+.printable-section {
+  gap: 18px;
+}
+
+.print-page {
+  width: min(980px, 100%);
+  margin: 0 auto;
+  padding: 34px;
+  color: #152033;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+}
+
+.print-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 28px;
+  padding-bottom: 22px;
+  border-bottom: 3px solid #0d1b2a;
+}
+
+.print-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.print-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #0d1b2a, #2f8cff 62%, #00b894);
+  color: #ffffff;
+  font-weight: 900;
+  letter-spacing: -0.08em;
+}
+
+.print-brand h1 {
+  margin: 0;
+  color: #0d1b2a;
+  font-size: 2rem;
+  letter-spacing: -0.06em;
+}
+
+.print-brand p,
+.print-slogan {
+  margin: 4px 0 0;
+  color: #526173;
+}
+
+.print-slogan {
+  font-weight: 700;
+  color: #00a878;
+}
+
+.print-meta-box {
+  display: grid;
+  gap: 5px;
+  min-width: 220px;
+  padding: 14px 16px;
+  border: 1px solid #d6dde8;
+  border-radius: 14px;
+  background: #f8fafc;
+  text-align: right;
+}
+
+.print-meta-box strong {
+  color: #0d1b2a;
+  font-size: 1.08rem;
+}
+
+.print-meta-box span {
+  color: #2f8cff;
+  font-size: 1.2rem;
+  font-weight: 900;
+}
+
+.print-meta-box small {
+  color: #526173;
+}
+
+.print-section {
+  padding: 20px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.print-section h2 {
+  margin: 0 0 10px;
+  color: #0d1b2a;
+  font-size: 1.02rem;
+  letter-spacing: -0.02em;
+}
+
+.print-section p {
+  margin: 5px 0;
+  color: #334155;
+  line-height: 1.5;
+}
+
+.two-columns-print {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px;
+}
+
+.print-table {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border: 1px solid #d6dde8;
+  border-radius: 12px;
+}
+
+.print-table th {
+  color: #ffffff;
+  background: #0d1b2a;
+  padding: 11px 10px;
+  font-size: 0.82rem;
+  text-align: left;
+}
+
+.print-table td {
+  padding: 11px 10px;
+  border-top: 1px solid #e2e8f0;
+  color: #1f2937;
+  vertical-align: top;
+}
+
+.print-table td span {
+  display: block;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.print-table th:nth-child(3),
+.print-table td:nth-child(3),
+.print-table th:nth-child(4),
+.print-table td:nth-child(4),
+.print-table th:nth-child(5),
+.print-table td:nth-child(5) {
+  text-align: right;
+}
+
+.print-empty {
+  padding: 12px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.print-totals-section {
+  display: grid;
+  grid-template-columns: 1.3fr 0.9fr;
+  gap: 28px;
+  align-items: start;
+}
+
+.print-notes ul {
+  margin: 0;
+  padding-left: 18px;
+  color: #334155;
+  line-height: 1.5;
+}
+
+.print-totals-box {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid #d6dde8;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.print-totals-box div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.print-totals-box div:last-child {
+  border-bottom: 0;
+}
+
+.print-totals-box span {
+  color: #526173;
+}
+
+.print-totals-box strong {
+  color: #0d1b2a;
+}
+
+.print-totals-box .grand-total {
+  background: #0d1b2a;
+}
+
+.print-totals-box .grand-total span,
+.print-totals-box .grand-total strong {
+  color: #ffffff;
+}
+
+.confidentiality-box {
+  padding: 15px;
+  margin-top: 18px;
+  border: 1px solid #f4c76b;
+  border-radius: 14px;
+  background: #fff8e6;
+}
+
+.confidentiality-box h2 {
+  color: #7a4b00;
+}
+
+.confidentiality-box p {
+  color: #5f430f;
+  font-size: 0.88rem;
+}
+
+.print-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding-top: 16px;
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+@media (max-width: 760px) {
+  .print-header,
+  .two-columns-print,
+  .print-totals-section,
+  .print-footer {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .print-meta-box {
+    text-align: left;
+  }
+
+  .print-page {
+    padding: 20px;
+  }
+}
+
+@media print {
+  @page {
+    size: letter;
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+  }
+
+  body {
+    color: #111827 !important;
+  }
+
+  .topbar,
+  .tabs,
+  .toast-message,
+  .footer-note,
+  .no-print {
+    display: none !important;
+  }
+
+  .app-shell {
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .printable-section {
+    display: block !important;
+  }
+
+  .print-page {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .print-header {
+    padding-bottom: 14px;
+  }
+
+  .print-section {
+    padding: 14px 0;
+  }
+
+  .print-table th {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .grand-total,
+  .print-brand-mark {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .confidentiality-box {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
