@@ -4,6 +4,14 @@
 
 UI V1 funcional sin backend.
 
+## Completado en Sprint 1.1
+
+- Guardado local de cotizaciones.
+- Historial de cotizaciones.
+- Folio automático.
+- Estados de cotización.
+- Duplicar, abrir y eliminar cotizaciones.
+
 ## Pendiente antes de meter base de datos
 
 - Validar precios base.
@@ -16,7 +24,7 @@ UI V1 funcional sin backend.
 
 1. UI funcional.
 2. Cálculos correctos.
-3. Guardado local.
+3. Guardado local. ✅
 4. PDF.
 5. Login.
 6. Base de datos.

@@ -498,3 +498,112 @@ select option {
     width: 100%;
   }
 }
+
+.toast-message {
+  border: 1px solid rgba(0, 184, 148, 0.38);
+  background: rgba(0, 184, 148, 0.12);
+  color: #cbfff2;
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  font-weight: 750;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(214, 221, 232, 0.18);
+  background: rgba(214, 221, 232, 0.08);
+  color: var(--muted-2);
+  padding: 7px 10px;
+  font-size: 0.8rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.status-badge.draft {
+  border-color: rgba(246, 200, 95, 0.34);
+  background: rgba(246, 200, 95, 0.11);
+  color: #ffe4a3;
+}
+
+.status-badge.sent {
+  border-color: rgba(47, 140, 255, 0.34);
+  background: rgba(47, 140, 255, 0.12);
+  color: #d8eaff;
+}
+
+.status-badge.accepted {
+  border-color: rgba(0, 184, 148, 0.42);
+  background: rgba(0, 184, 148, 0.13);
+  color: #cbfff2;
+}
+
+.status-badge.rejected {
+  border-color: rgba(255, 107, 107, 0.36);
+  background: rgba(255, 107, 107, 0.12);
+  color: #ffd2d2;
+}
+
+.quote-actions.stretch .btn {
+  flex: 1;
+}
+
+.history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  border: 1px solid rgba(214, 221, 232, 0.12);
+  background: rgba(255, 255, 255, 0.035);
+  border-radius: 16px;
+  padding: 15px;
+}
+
+.history-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.history-heading h4 {
+  margin: 0;
+  font-size: 1.08rem;
+}
+
+.history-row p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+  font-size: 0.92rem;
+}
+
+.history-actions {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) repeat(3, auto);
+  gap: 8px;
+  align-items: center;
+}
+
+.kpi-label {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 750;
+  margin-bottom: 8px;
+}
+
+.kpi-value {
+  display: block;
+  font-size: clamp(1.4rem, 3vw, 2rem);
+  letter-spacing: -0.05em;
+}
+
+@media (max-width: 900px) {
+  .history-row,
+  .history-actions {
+    grid-template-columns: 1fr;
+  }
+}

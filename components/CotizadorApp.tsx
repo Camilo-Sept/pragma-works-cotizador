@@ -12,12 +12,21 @@ import {
   formatQuoteMode,
   formatSourceCodeOption,
 } from "@/lib/pricing";
+import {
+  getDefaultValidUntil,
+  getNextQuoteFolio,
+  loadSavedQuotes,
+  persistSavedQuotes,
+  sortQuotesByUpdatedAt,
+} from "@/lib/quoteStorage";
 import type {
   BillingType,
   ClientDraft,
   PricingRules,
   QuoteItem,
   QuoteMode,
+  QuoteStatus,
+  SavedQuote,
   ServiceCategory,
   ServiceItem,
   SourceCodeOption,
@@ -35,6 +44,13 @@ const categoryLabels: Record<ServiceCategory, string> = {
   support: "Soporte",
   infrastructure: "Infraestructura",
   other: "Otro",
+};
+
+const statusLabels: Record<QuoteStatus, string> = {
+  draft: "Borrador",
+  sent: "Enviada",
+  accepted: "Aceptada",
+  rejected: "Rechazada",
 };
 
 const defaultClient: ClientDraft = {
@@ -77,13 +93,30 @@ function serviceToQuoteItem(service: ServiceItem): QuoteItem {
   };
 }
 
+function cloneQuoteItems(items: QuoteItem[]): QuoteItem[] {
+  return items.map((item) => ({ ...item, id: makeId("item") }));
+}
+
 function safeNumber(value: string | number, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("es-MX", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("es-MX", {
+    dateStyle: "medium",
+  }).format(new Date(`${value}T12:00:00`));
+}
+
 export function CotizadorApp() {
-  const [activeTab, setActiveTab] = useState<"quote" | "catalog" | "rules" | "github">("quote");
+  const [activeTab, setActiveTab] = useState<"quote" | "history" | "catalog" | "rules" | "github">("quote");
   const [client, setClient] = useState<ClientDraft>(defaultClient);
   const [mode, setMode] = useState<QuoteMode>("hybrid");
   const [sourceCodeOption, setSourceCodeOption] = useState<SourceCodeOption>("none");
@@ -94,17 +127,25 @@ export function CotizadorApp() {
   const [manualDraft, setManualDraft] = useState(defaultManualService());
   const [saveManualToCatalog, setSaveManualToCatalog] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [savedQuotes, setSavedQuotes] = useState<SavedQuote[]>([]);
+  const [currentQuoteId, setCurrentQuoteId] = useState<string | null>(null);
+  const [quoteStatus, setQuoteStatus] = useState<QuoteStatus>("draft");
+  const [validUntil, setValidUntil] = useState("");
+  const [savedMessage, setSavedMessage] = useState("");
 
   useEffect(() => {
     const raw = window.localStorage.getItem(CUSTOM_SERVICES_KEY);
-    if (!raw) return;
-
-    try {
-      const parsed = JSON.parse(raw) as ServiceItem[];
-      setCustomServices(parsed);
-    } catch {
-      window.localStorage.removeItem(CUSTOM_SERVICES_KEY);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as ServiceItem[];
+        setCustomServices(parsed);
+      } catch {
+        window.localStorage.removeItem(CUSTOM_SERVICES_KEY);
+      }
     }
+
+    setSavedQuotes(loadSavedQuotes());
+    setValidUntil(getDefaultValidUntil());
   }, []);
 
   useEffect(() => {
@@ -151,6 +192,35 @@ export function CotizadorApp() {
     [client, items, mode, sourceCodeOption, totals],
   );
 
+  const currentQuote = useMemo(
+    () => savedQuotes.find((quote) => quote.id === currentQuoteId) ?? null,
+    [currentQuoteId, savedQuotes],
+  );
+
+  const sortedSavedQuotes = useMemo(() => sortQuotesByUpdatedAt(savedQuotes), [savedQuotes]);
+
+  const historyTotals = useMemo(() => {
+    return savedQuotes.reduce(
+      (acc, quote) => {
+        acc.initial += quote.totals.suggestedInitialPayment;
+        acc.monthly += quote.totals.suggestedMonthlyPayment;
+        acc.accepted += quote.status === "accepted" ? 1 : 0;
+        return acc;
+      },
+      { initial: 0, monthly: 0, accepted: 0 },
+    );
+  }, [savedQuotes]);
+
+  function persistQuotes(nextQuotes: SavedQuote[]) {
+    setSavedQuotes(nextQuotes);
+    persistSavedQuotes(nextQuotes);
+  }
+
+  function showSavedMessage(message: string) {
+    setSavedMessage(message);
+    window.setTimeout(() => setSavedMessage(""), 2200);
+  }
+
   function addService(service: ServiceItem) {
     setItems((current) => [...current, serviceToQuoteItem(service)]);
     setQuery("");
@@ -186,6 +256,111 @@ export function CotizadorApp() {
     setItems((current) => current.filter((item) => item.id !== id));
   }
 
+  function buildSavedQuote(status: QuoteStatus): SavedQuote {
+    const now = new Date().toISOString();
+    const existing = currentQuote;
+
+    return {
+      id: existing?.id ?? makeId("quote"),
+      folio: existing?.folio ?? getNextQuoteFolio(),
+      status,
+      client,
+      mode,
+      sourceCodeOption: mode === "rental" ? "none" : sourceCodeOption,
+      rules,
+      items,
+      totals,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      validUntil: validUntil || getDefaultValidUntil(),
+    };
+  }
+
+  function saveQuote(status: QuoteStatus = quoteStatus) {
+    if (items.length === 0) {
+      showSavedMessage("Agrega al menos un concepto antes de guardar.");
+      return;
+    }
+
+    const quote = buildSavedQuote(status);
+    const exists = savedQuotes.some((savedQuote) => savedQuote.id === quote.id);
+    const nextQuotes = exists
+      ? savedQuotes.map((savedQuote) => (savedQuote.id === quote.id ? quote : savedQuote))
+      : [quote, ...savedQuotes];
+
+    persistQuotes(nextQuotes);
+    setCurrentQuoteId(quote.id);
+    setQuoteStatus(status);
+    showSavedMessage(`Cotización ${quote.folio} guardada como ${statusLabels[status]}.`);
+  }
+
+  function loadQuote(quote: SavedQuote) {
+    setClient(quote.client);
+    setMode(quote.mode);
+    setSourceCodeOption(quote.sourceCodeOption);
+    setRules(quote.rules);
+    setItems(quote.items);
+    setQuoteStatus(quote.status);
+    setCurrentQuoteId(quote.id);
+    setValidUntil(quote.validUntil || getDefaultValidUntil());
+    setActiveTab("quote");
+    showSavedMessage(`Cotización ${quote.folio} cargada.`);
+  }
+
+  function duplicateQuote(quote: SavedQuote) {
+    const now = new Date().toISOString();
+    const duplicatedItems = cloneQuoteItems(quote.items);
+    const duplicatedTotals = calculateQuoteTotals(
+      duplicatedItems,
+      quote.mode,
+      quote.sourceCodeOption,
+      quote.rules,
+    );
+
+    const duplicatedQuote: SavedQuote = {
+      ...quote,
+      id: makeId("quote"),
+      folio: getNextQuoteFolio(),
+      status: "draft",
+      items: duplicatedItems,
+      totals: duplicatedTotals,
+      createdAt: now,
+      updatedAt: now,
+      validUntil: getDefaultValidUntil(),
+    };
+
+    persistQuotes([duplicatedQuote, ...savedQuotes]);
+    loadQuote(duplicatedQuote);
+  }
+
+  function deleteQuote(quoteId: string) {
+    const quote = savedQuotes.find((savedQuote) => savedQuote.id === quoteId);
+    const confirmed = window.confirm(`¿Eliminar ${quote?.folio ?? "esta cotización"}? Esta acción no se puede deshacer.`);
+    if (!confirmed) return;
+
+    const nextQuotes = savedQuotes.filter((savedQuote) => savedQuote.id !== quoteId);
+    persistQuotes(nextQuotes);
+
+    if (currentQuoteId === quoteId) {
+      resetQuote();
+    }
+
+    showSavedMessage("Cotización eliminada.");
+  }
+
+  function updateQuoteStatus(quoteId: string, status: QuoteStatus) {
+    const now = new Date().toISOString();
+    const nextQuotes = savedQuotes.map((quote) =>
+      quote.id === quoteId ? { ...quote, status, updatedAt: now } : quote,
+    );
+
+    persistQuotes(nextQuotes);
+
+    if (currentQuoteId === quoteId) {
+      setQuoteStatus(status);
+    }
+  }
+
   async function copySummary() {
     await navigator.clipboard.writeText(whatsappSummary);
     setCopied(true);
@@ -198,6 +373,9 @@ export function CotizadorApp() {
     setSourceCodeOption("none");
     setItems([]);
     setQuery("");
+    setQuoteStatus("draft");
+    setCurrentQuoteId(null);
+    setValidUntil(getDefaultValidUntil());
   }
 
   return (
@@ -214,14 +392,19 @@ export function CotizadorApp() {
         </section>
         <div className="pill-row">
           <span className="pill">UI V1 sin BD</span>
-          <span className="pill">Listo para GitHub</span>
-          <span className="pill">Sin Docker / Prisma</span>
+          <span className="pill">Sprint 1.1</span>
+          <span className="pill">Guardado local</span>
         </div>
       </header>
+
+      {savedMessage && <div className="toast-message">{savedMessage}</div>}
 
       <nav className="tabs" aria-label="Secciones del cotizador">
         <button className={`tab-button ${activeTab === "quote" ? "active" : ""}`} onClick={() => setActiveTab("quote")}>
           Nueva cotización
+        </button>
+        <button className={`tab-button ${activeTab === "history" ? "active" : ""}`} onClick={() => setActiveTab("history")}>
+          Historial ({savedQuotes.length})
         </button>
         <button className={`tab-button ${activeTab === "catalog" ? "active" : ""}`} onClick={() => setActiveTab("catalog")}>
           Catálogo local
@@ -243,7 +426,10 @@ export function CotizadorApp() {
                   <h2>Datos del cliente</h2>
                   <p>Información básica para preparar la propuesta comercial.</p>
                 </div>
-                <button className="btn ghost" onClick={resetQuote}>Limpiar</button>
+                <div className="quote-actions">
+                  {currentQuote && <span className={`status-badge ${quoteStatus}`}>{currentQuote.folio} · {statusLabels[quoteStatus]}</span>}
+                  <button className="btn ghost" onClick={resetQuote}>Nueva / limpiar</button>
+                </div>
               </div>
 
               <div className="form-grid">
@@ -262,6 +448,19 @@ export function CotizadorApp() {
                 <div className="field">
                   <label>Correo</label>
                   <input value={client.email} onChange={(event) => setClient({ ...client, email: event.target.value })} placeholder="cliente@empresa.com" />
+                </div>
+                <div className="field">
+                  <label>Vigencia</label>
+                  <input type="date" value={validUntil} onChange={(event) => setValidUntil(event.target.value)} />
+                </div>
+                <div className="field">
+                  <label>Estado</label>
+                  <select value={quoteStatus} onChange={(event) => setQuoteStatus(event.target.value as QuoteStatus)}>
+                    <option value="draft">Borrador</option>
+                    <option value="sent">Enviada</option>
+                    <option value="accepted">Aceptada</option>
+                    <option value="rejected">Rechazada</option>
+                  </select>
                 </div>
                 <div className="field full">
                   <label>Nombre del proyecto</label>
@@ -500,6 +699,29 @@ export function CotizadorApp() {
             <section className="card">
               <div className="card-title">
                 <div>
+                  <h2>Guardar cotización</h2>
+                  <p>En Sprint 1.1 se guarda localmente en este navegador.</p>
+                </div>
+              </div>
+              <div className="grid">
+                <div className="notice info">
+                  {currentQuote ? (
+                    <>Editando <strong>{currentQuote.folio}</strong>. Última actualización: {formatDateTime(currentQuote.updatedAt)}.</>
+                  ) : (
+                    <>Cotización nueva. Al guardar se asignará un folio automático tipo <strong>PW-000001</strong>.</>
+                  )}
+                </div>
+                <div className="quote-actions stretch">
+                  <button className="btn ghost" onClick={() => saveQuote("draft")}>Guardar borrador</button>
+                  <button className="btn primary" onClick={() => saveQuote("sent")}>Guardar como enviada</button>
+                  <button className="btn success" onClick={() => saveQuote("accepted")}>Marcar aceptada</button>
+                </div>
+              </div>
+            </section>
+
+            <section className="card">
+              <div className="card-title">
+                <div>
                   <h2>Resumen para WhatsApp</h2>
                   <p>Texto rápido para enviar o usar como base comercial.</p>
                 </div>
@@ -508,6 +730,78 @@ export function CotizadorApp() {
               <pre className="preview">{whatsappSummary}</pre>
             </section>
           </aside>
+        </section>
+      )}
+
+      {activeTab === "history" && (
+        <section className="grid">
+          <section className="kpi-row">
+            <article className="card soft">
+              <div className="kpi-label">Cotizaciones</div>
+              <strong className="kpi-value">{savedQuotes.length}</strong>
+            </article>
+            <article className="card soft">
+              <div className="kpi-label">Aceptadas</div>
+              <strong className="kpi-value">{historyTotals.accepted}</strong>
+            </article>
+            <article className="card soft">
+              <div className="kpi-label">Inicial cotizado</div>
+              <strong className="kpi-value">{formatCurrency(historyTotals.initial)}</strong>
+            </article>
+            <article className="card soft">
+              <div className="kpi-label">Mensual cotizado</div>
+              <strong className="kpi-value">{formatCurrency(historyTotals.monthly)}</strong>
+            </article>
+          </section>
+
+          <section className="card">
+            <div className="card-title">
+              <div>
+                <h2>Historial de cotizaciones</h2>
+                <p>Guardado local en este navegador. Después se migrará a base de datos.</p>
+              </div>
+              <button className="btn ghost" onClick={resetQuote}>Nueva cotización</button>
+            </div>
+
+            {sortedSavedQuotes.length === 0 ? (
+              <div className="notice">Todavía no hay cotizaciones guardadas. Crea una cotización y presiona Guardar borrador o Guardar como enviada.</div>
+            ) : (
+              <div className="table-like">
+                {sortedSavedQuotes.map((quote) => (
+                  <article className="history-row" key={quote.id}>
+                    <div>
+                      <div className="history-heading">
+                        <h4>{quote.folio}</h4>
+                        <span className={`status-badge ${quote.status}`}>{statusLabels[quote.status]}</span>
+                      </div>
+                      <p>
+                        <strong>{quote.client.company || quote.client.clientName || "Cliente pendiente"}</strong>
+                        {quote.client.projectName ? ` · ${quote.client.projectName}` : " · Proyecto pendiente"}
+                      </p>
+                      <div className="meta-row">
+                        <span className="meta">{formatQuoteMode(quote.mode)}</span>
+                        <span className="meta">Inicial {formatCurrency(quote.totals.suggestedInitialPayment)}</span>
+                        <span className="meta">Mensual {formatCurrency(quote.totals.suggestedMonthlyPayment)}</span>
+                        <span className="meta">Vigente hasta {formatDate(quote.validUntil)}</span>
+                        <span className="meta">Actualizada {formatDateTime(quote.updatedAt)}</span>
+                      </div>
+                    </div>
+                    <div className="history-actions">
+                      <select value={quote.status} onChange={(event) => updateQuoteStatus(quote.id, event.target.value as QuoteStatus)}>
+                        <option value="draft">Borrador</option>
+                        <option value="sent">Enviada</option>
+                        <option value="accepted">Aceptada</option>
+                        <option value="rejected">Rechazada</option>
+                      </select>
+                      <button className="btn primary" onClick={() => loadQuote(quote)}>Abrir</button>
+                      <button className="btn ghost" onClick={() => duplicateQuote(quote)}>Duplicar</button>
+                      <button className="btn danger" onClick={() => deleteQuote(quote.id)}>Eliminar</button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
         </section>
       )}
 
@@ -520,6 +814,7 @@ export function CotizadorApp() {
                 <p>V1 usa catálogo en archivo + conceptos personalizados guardados en este navegador.</p>
               </div>
             </div>
+
             <div className="catalog-list">
               {services.map((service) => (
                 <article className="service-row" key={service.id}>
@@ -606,29 +901,25 @@ export function CotizadorApp() {
           <section className="card">
             <div className="card-title">
               <div>
-                <h2>Proyecto listo para GitHub</h2>
-                <p>Esta base ya está pensada para subir limpia como primer commit.</p>
+                <h2>GitHub</h2>
+                <p>Comandos sugeridos para cerrar el Sprint 1.1.</p>
               </div>
             </div>
-            <pre className="preview">{`git init
+            <pre className="preview">{`git status
 git add .
-git commit -m "feat: crear cotizador ui v1"
-
-# Luego crear repo en GitHub y conectar:
-git branch -M main
-git remote add origin <URL_DE_TU_REPO>
-git push -u origin main`}</pre>
+git commit -m "feat: agregar guardado local de cotizaciones"
+git push -u origin sprint-1-1-guardar-cotizaciones`}</pre>
           </section>
           <section className="card">
             <div className="card-title">
               <div>
                 <h2>Siguiente sprint</h2>
-                <p>No meter base de datos hasta validar bien pantalla y cálculo.</p>
+                <p>No meter base de datos hasta validar guardado local y flujo de historial.</p>
               </div>
             </div>
             <div className="grid">
-              <div className="service-row"><div><h4>Sprint 1.1</h4><p>Guardar borradores en localStorage y listar cotizaciones recientes.</p></div></div>
               <div className="service-row"><div><h4>Sprint 1.2</h4><p>Generar vista imprimible / PDF sin base de datos.</p></div></div>
+              <div className="service-row"><div><h4>Sprint 1.3</h4><p>Reportes simples desde cotizaciones guardadas.</p></div></div>
               <div className="service-row"><div><h4>Sprint 2</h4><p>Agregar login, base de datos y catálogo administrable.</p></div></div>
               <div className="service-row"><div><h4>Sprint 3</h4><p>Docker, PostgreSQL, deploy y PWA instalable.</p></div></div>
             </div>
@@ -637,7 +928,7 @@ git push -u origin main`}</pre>
       )}
 
       <p className="footer-note">
-        {companyProfile.name} · UI V1 · Sin datos sensibles · Base inicial para GitHub.
+        {companyProfile.name} · Sprint 1.1 · Guardado local · Sin datos sensibles · Base limpia para GitHub.
       </p>
     </main>
   );

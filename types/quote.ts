@@ -4,6 +4,8 @@ export type QuoteMode = "one_time" | "rental" | "hybrid";
 
 export type SourceCodeOption = "none" | "delivery_after_payment" | "full_buyout";
 
+export type QuoteStatus = "draft" | "sent" | "accepted" | "rejected";
+
 export type ServiceCategory =
   | "web"
   | "system"
@@ -84,4 +86,19 @@ export type QuoteTotals = {
   estimatedHours: number;
   effectiveHourlyRate: number;
   commercialNotes: string[];
+};
+
+export type SavedQuote = {
+  id: string;
+  folio: string;
+  status: QuoteStatus;
+  client: ClientDraft;
+  mode: QuoteMode;
+  sourceCodeOption: SourceCodeOption;
+  rules: PricingRules;
+  items: QuoteItem[];
+  totals: QuoteTotals;
+  createdAt: string;
+  updatedAt: string;
+  validUntil: string;
 };
