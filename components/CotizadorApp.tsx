@@ -847,9 +847,30 @@ export function CotizadorApp() {
     showSavedMessage("Reporte CSV descargado.");
   }
 
-  function printReports() {
-    window.print();
-    showSavedMessage("Usa Guardar como PDF en la ventana de impresión.");
+  function printWithMode(mode: "quote" | "reports-summary" | "reports-detail") {
+    document.body.dataset.printMode = mode;
+
+    const cleanupPrintMode = () => {
+      delete document.body.dataset.printMode;
+      window.removeEventListener("afterprint", cleanupPrintMode);
+    };
+
+    window.addEventListener("afterprint", cleanupPrintMode);
+
+    window.setTimeout(() => {
+      window.print();
+      window.setTimeout(cleanupPrintMode, 700);
+    }, 50);
+  }
+
+  function printReportsSummary() {
+    printWithMode("reports-summary");
+    showSavedMessage("PDF resumen: imprime sólo indicadores y seguimiento. Para filas completas usa CSV.");
+  }
+
+  function printReportsDetail() {
+    printWithMode("reports-detail");
+    showSavedMessage("PDF detalle: puede ocupar varias hojas si hay muchas cotizaciones.");
   }
 
   async function copySummary() {
@@ -863,7 +884,7 @@ export function CotizadorApp() {
   }
 
   function printQuote() {
-    window.print();
+    printWithMode("quote");
   }
 
   function resetQuote() {
@@ -1329,9 +1350,14 @@ export function CotizadorApp() {
               </div>
               <div className="quote-actions no-print">
                 <button className="btn ghost" onClick={clearReportFilters}>Limpiar filtros</button>
-                <button className="btn success" onClick={exportReportCsv}>Exportar CSV</button>
-                <button className="btn print" onClick={printReports}>Imprimir / Guardar PDF</button>
+                <button className="btn success" onClick={exportReportCsv}>Exportar datos CSV</button>
+                <button className="btn print" onClick={printReportsSummary}>PDF resumen</button>
+                <button className="btn ghost" onClick={printReportsDetail}>PDF detalle</button>
               </div>
+            </div>
+
+            <div className="notice info no-print report-export-help">
+              <strong>Cómo se exporta:</strong> PDF resumen imprime indicadores y seguimiento para revisión rápida. PDF detalle imprime también las tablas de cotizaciones y puede salir en varias hojas. CSV exporta datos crudos para Excel, por eso trae columnas distintas al PDF. Para mandar una propuesta a cliente usa la pestaña <strong>Vista / PDF</strong> de la cotización.
             </div>
 
             <div className="report-filters no-print">
@@ -1385,6 +1411,11 @@ export function CotizadorApp() {
                 )}
               </div>
               <small>La búsqueda revisa: folio, empresa, contacto, proyecto, correo, teléfono, fecha objetivo, estado y modalidad.</small>
+            </div>
+
+            <div className="print-only report-print-note">
+              <strong>Reporte operativo de cotizaciones</strong> · Generado desde datos locales del navegador.
+              {reportFilterLabels.length > 0 ? ` Filtros aplicados: ${reportFilterLabels.join(" · ")}.` : " Sin filtros aplicados."}
             </div>
           </section>
 
@@ -1476,7 +1507,7 @@ export function CotizadorApp() {
             </section>
           </section>
 
-          <section className="card">
+          <section className="card report-detail-section">
             <div className="card-title">
               <div>
                 <h2>Proyectos por entregar</h2>
@@ -1518,7 +1549,7 @@ export function CotizadorApp() {
             )}
           </section>
 
-          <section className="card">
+          <section className="card report-detail-section">
             <div className="card-title">
               <div>
                 <h2>Vencimiento de cotizaciones</h2>
@@ -1560,7 +1591,7 @@ export function CotizadorApp() {
             )}
           </section>
 
-          <section className="card">
+          <section className="card report-detail-section">
             <div className="card-title">
               <div>
                 <h2>Cotizaciones con dinero por cerrar</h2>
