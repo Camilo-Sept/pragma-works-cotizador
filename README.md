@@ -40,6 +40,9 @@ Esta versión está hecha **a propósito sin Docker, Prisma, PostgreSQL, login n
 - Resumen listo para copiar a WhatsApp.
 - Guardado local de cotizaciones en `localStorage`.
 - Historial de cotizaciones recientes.
+- Reportes locales desde cotizaciones guardadas.
+- Filtros de reportes por estado, modalidad, fecha y búsqueda.
+- Exportación CSV de reportes locales.
 - Folio automático tipo `PW-000001`.
 - Estados: borrador, enviada, aceptada y rechazada.
 - Duplicar, abrir y eliminar cotizaciones guardadas.
@@ -156,9 +159,16 @@ Completado en rama de trabajo local:
 
 ### Sprint 1.4
 
-- Reportes simples desde historial local.
-- Filtros por estado de cotización.
-- Totales por estatus.
+- Reportes simples desde historial local. ✅
+- Filtros por estado, modalidad, fechas y búsqueda. ✅
+- Totales por estatus y KPIs comerciales. ✅
+- Exportación CSV del reporte filtrado. ✅
+
+### Sprint 1.5
+
+- Plantillas comerciales editables.
+- Textos configurables para condiciones y alcance.
+- Preparar terreno para usuarios y permisos.
 
 ### Sprint 2
 

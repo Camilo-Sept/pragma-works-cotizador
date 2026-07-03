@@ -4,6 +4,16 @@
 
 UI V1 funcional sin backend.
 
+## Completado en Sprint 1.4
+
+- Reportes locales desde cotizaciones guardadas.
+- Filtros por estado, modalidad, fechas y búsqueda.
+- KPIs comerciales: cotizaciones filtradas, conversión, pipeline inicial, mensual, renovación anual y horas.
+- Resumen por estado.
+- Embudo rápido de borradores, enviadas, aceptadas y rechazadas.
+- Oportunidades principales ordenadas por pago inicial.
+- Exportación CSV del reporte filtrado.
+
 ## Completado en Sprint 1.3
 
 - Catálogo editable desde UI.
@@ -37,6 +47,7 @@ UI V1 funcional sin backend.
 - Validar resumen de WhatsApp.
 - Validar que la vista imprimible sea clara para cliente final.
 - Validar catálogo editable local y precios modificados desde UI.
+- Validar reportes locales, filtros y exportación CSV.
 - Validar conceptos de mantenimiento y confidencialidad.
 
 ## Orden correcto
@@ -46,8 +57,9 @@ UI V1 funcional sin backend.
 3. Guardado local. ✅
 4. PDF. ✅
 5. Catálogo editable local. ✅
-6. Reportes simples.
-7. Login.
-8. Base de datos.
-9. Docker.
-10. Deploy.
+6. Reportes simples. ✅
+7. Plantillas comerciales editables.
+8. Login.
+9. Base de datos.
+10. Docker.
+11. Deploy.

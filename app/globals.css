@@ -990,3 +990,122 @@ select option {
     justify-content: flex-start;
   }
 }
+
+/* Sprint 1.4 - Reportes locales */
+.report-filters {
+  display: grid;
+  grid-template-columns: 1.4fr 0.85fr 0.95fr 0.85fr 0.85fr;
+  gap: 12px;
+  align-items: end;
+}
+
+.reports-kpis {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.status-report-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.status-report-card {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.status-report-card p {
+  margin: 7px 0 0;
+  color: var(--muted);
+}
+
+.status-report-card strong {
+  color: var(--text);
+}
+
+.funnel-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.funnel-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.funnel-list span {
+  color: var(--muted);
+}
+
+.funnel-list strong {
+  color: var(--text);
+  font-size: 1.1rem;
+}
+
+.report-table {
+  display: grid;
+  gap: 8px;
+}
+
+.report-table-head,
+.report-table-row {
+  display: grid;
+  grid-template-columns: 0.65fr 1.7fr 0.8fr 0.85fr 0.85fr 0.55fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.report-table-head {
+  padding: 0 12px 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.report-table-row {
+  padding: 13px 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.report-table-row small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.report-table-row > strong:nth-child(4),
+.report-table-row > strong:nth-child(5) {
+  text-align: right;
+}
+
+@media (max-width: 1120px) {
+  .reports-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .report-filters,
+  .report-table-head,
+  .report-table-row {
+    grid-template-columns: 1fr;
+  }
+
+  .report-table-head {
+    display: none;
+  }
+
+  .report-table-row > strong:nth-child(4),
+  .report-table-row > strong:nth-child(5) {
+    text-align: left;
+  }
+}

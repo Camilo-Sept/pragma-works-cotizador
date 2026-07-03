@@ -131,8 +131,22 @@ function formatDate(value: string) {
   }).format(new Date(`${value}T12:00:00`));
 }
 
+function getDateInputValue(value: string) {
+  if (!value) return "";
+  return value.slice(0, 10);
+}
+
+function escapeCsvValue(value: string | number) {
+  const text = String(value ?? "");
+  if ([",", "\n", "\r", '"'].some((char) => text.includes(char))) {
+    return `"${text.replaceAll('"', '""')}"`;
+  }
+
+  return text;
+}
+
 export function CotizadorApp() {
-  const [activeTab, setActiveTab] = useState<"quote" | "history" | "preview" | "catalog" | "rules" | "github">("quote");
+  const [activeTab, setActiveTab] = useState<"quote" | "history" | "reports" | "preview" | "catalog" | "rules" | "github">("quote");
   const [client, setClient] = useState<ClientDraft>(defaultClient);
   const [mode, setMode] = useState<QuoteMode>("hybrid");
   const [sourceCodeOption, setSourceCodeOption] = useState<SourceCodeOption>("none");
@@ -154,6 +168,11 @@ export function CotizadorApp() {
   const [quoteStatus, setQuoteStatus] = useState<QuoteStatus>("draft");
   const [validUntil, setValidUntil] = useState("");
   const [savedMessage, setSavedMessage] = useState("");
+  const [reportStatus, setReportStatus] = useState<QuoteStatus | "all">("all");
+  const [reportMode, setReportMode] = useState<QuoteMode | "all">("all");
+  const [reportSearch, setReportSearch] = useState("");
+  const [reportFromDate, setReportFromDate] = useState("");
+  const [reportToDate, setReportToDate] = useState("");
 
   useEffect(() => {
     const raw = window.localStorage.getItem(CUSTOM_SERVICES_KEY);
@@ -272,6 +291,79 @@ export function CotizadorApp() {
       { initial: 0, monthly: 0, accepted: 0 },
     );
   }, [savedQuotes]);
+
+  const reportQuotes = useMemo(() => {
+    const search = reportSearch.trim().toLowerCase();
+    const fromTime = reportFromDate ? new Date(`${reportFromDate}T00:00:00`).getTime() : null;
+    const toTime = reportToDate ? new Date(`${reportToDate}T23:59:59`).getTime() : null;
+
+    return sortQuotesByUpdatedAt(savedQuotes).filter((quote) => {
+      if (reportStatus !== "all" && quote.status !== reportStatus) return false;
+      if (reportMode !== "all" && quote.mode !== reportMode) return false;
+
+      const updatedTime = new Date(quote.updatedAt).getTime();
+      if (fromTime && updatedTime < fromTime) return false;
+      if (toTime && updatedTime > toTime) return false;
+
+      if (!search) return true;
+
+      return [
+        quote.folio,
+        quote.client.company,
+        quote.client.clientName,
+        quote.client.projectName,
+        quote.client.email,
+        quote.client.phone,
+        statusLabels[quote.status],
+        formatQuoteMode(quote.mode),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(search);
+    });
+  }, [reportFromDate, reportMode, reportSearch, reportStatus, reportToDate, savedQuotes]);
+
+  const reportTotals = useMemo(() => {
+    return reportQuotes.reduce(
+      (acc, quote) => {
+        acc.initial += quote.totals.suggestedInitialPayment;
+        acc.monthly += quote.totals.suggestedMonthlyPayment;
+        acc.annual += quote.totals.suggestedAnnualRenewal;
+        acc.hours += quote.totals.estimatedHours;
+        acc.accepted += quote.status === "accepted" ? 1 : 0;
+        acc.sent += quote.status === "sent" ? 1 : 0;
+        acc.draft += quote.status === "draft" ? 1 : 0;
+        acc.rejected += quote.status === "rejected" ? 1 : 0;
+        return acc;
+      },
+      { initial: 0, monthly: 0, annual: 0, hours: 0, accepted: 0, sent: 0, draft: 0, rejected: 0 },
+    );
+  }, [reportQuotes]);
+
+  const reportStatusSummary = useMemo(() => {
+    const base: Record<QuoteStatus, { count: number; initial: number; monthly: number }> = {
+      draft: { count: 0, initial: 0, monthly: 0 },
+      sent: { count: 0, initial: 0, monthly: 0 },
+      accepted: { count: 0, initial: 0, monthly: 0 },
+      rejected: { count: 0, initial: 0, monthly: 0 },
+    };
+
+    reportQuotes.forEach((quote) => {
+      base[quote.status].count += 1;
+      base[quote.status].initial += quote.totals.suggestedInitialPayment;
+      base[quote.status].monthly += quote.totals.suggestedMonthlyPayment;
+    });
+
+    return base;
+  }, [reportQuotes]);
+
+  const topReportQuotes = useMemo(() => {
+    return [...reportQuotes]
+      .sort((a, b) => b.totals.suggestedInitialPayment - a.totals.suggestedInitialPayment)
+      .slice(0, 8);
+  }, [reportQuotes]);
+
+  const conversionRate = reportQuotes.length > 0 ? Math.round((reportTotals.accepted / reportQuotes.length) * 100) : 0;
 
   function persistQuotes(nextQuotes: SavedQuote[]) {
     setSavedQuotes(nextQuotes);
@@ -547,6 +639,68 @@ export function CotizadorApp() {
     }
   }
 
+  function clearReportFilters() {
+    setReportStatus("all");
+    setReportMode("all");
+    setReportSearch("");
+    setReportFromDate("");
+    setReportToDate("");
+  }
+
+  function exportReportCsv() {
+    if (reportQuotes.length === 0) {
+      showSavedMessage("No hay cotizaciones para exportar con esos filtros.");
+      return;
+    }
+
+    const headers = [
+      "Folio",
+      "Estado",
+      "Empresa",
+      "Contacto",
+      "Proyecto",
+      "Modalidad",
+      "Pago inicial",
+      "Mensualidad",
+      "Renovacion anual",
+      "Horas estimadas",
+      "Vigencia",
+      "Creada",
+      "Actualizada",
+    ];
+
+    const rows = reportQuotes.map((quote) => [
+      quote.folio,
+      statusLabels[quote.status],
+      quote.client.company || "",
+      quote.client.clientName || "",
+      quote.client.projectName || "",
+      formatQuoteMode(quote.mode),
+      quote.totals.suggestedInitialPayment,
+      quote.totals.suggestedMonthlyPayment,
+      quote.totals.suggestedAnnualRenewal,
+      quote.totals.estimatedHours,
+      quote.validUntil || "",
+      getDateInputValue(quote.createdAt),
+      getDateInputValue(quote.updatedAt),
+    ]);
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map((value) => escapeCsvValue(value)).join(","))
+      .join("\n");
+
+    const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `reporte-cotizaciones-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showSavedMessage("Reporte CSV descargado.");
+  }
+
   async function copySummary() {
     await navigator.clipboard.writeText(whatsappSummary);
     setCopied(true);
@@ -586,8 +740,8 @@ export function CotizadorApp() {
         </section>
         <div className="pill-row">
           <span className="pill">UI V1 sin BD</span>
-          <span className="pill">Sprint 1.3</span>
-          <span className="pill">Catálogo editable</span>
+          <span className="pill">Sprint 1.4</span>
+          <span className="pill">Reportes locales</span>
         </div>
       </header>
 
@@ -599,6 +753,9 @@ export function CotizadorApp() {
         </button>
         <button className={`tab-button ${activeTab === "history" ? "active" : ""}`} onClick={() => setActiveTab("history")}>
           Historial ({savedQuotes.length})
+        </button>
+        <button className={`tab-button ${activeTab === "reports" ? "active" : ""}`} onClick={() => setActiveTab("reports")}>
+          Reportes
         </button>
         <button className={`tab-button ${activeTab === "preview" ? "active" : ""}`} onClick={() => setActiveTab("preview")}>
           Vista / PDF
@@ -1003,6 +1160,163 @@ export function CotizadorApp() {
         </section>
       )}
 
+      {activeTab === "reports" && (
+        <section className="grid">
+          <section className="card">
+            <div className="card-title">
+              <div>
+                <h2>Reportes locales</h2>
+                <p>Analiza las cotizaciones guardadas en este navegador antes de migrar a base de datos.</p>
+              </div>
+              <div className="quote-actions">
+                <button className="btn ghost" onClick={clearReportFilters}>Limpiar filtros</button>
+                <button className="btn success" onClick={exportReportCsv}>Exportar CSV</button>
+              </div>
+            </div>
+
+            <div className="report-filters">
+              <div className="field">
+                <label>Buscar</label>
+                <input value={reportSearch} onChange={(event) => setReportSearch(event.target.value)} placeholder="Folio, cliente, proyecto, correo..." />
+              </div>
+              <div className="field">
+                <label>Estado</label>
+                <select value={reportStatus} onChange={(event) => setReportStatus(event.target.value as QuoteStatus | "all")}>
+                  <option value="all">Todos</option>
+                  <option value="draft">Borrador</option>
+                  <option value="sent">Enviada</option>
+                  <option value="accepted">Aceptada</option>
+                  <option value="rejected">Rechazada</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>Modalidad</label>
+                <select value={reportMode} onChange={(event) => setReportMode(event.target.value as QuoteMode | "all")}>
+                  <option value="all">Todas</option>
+                  <option value="one_time">Venta única</option>
+                  <option value="rental">Renta mensual</option>
+                  <option value="hybrid">Híbrido</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>Actualizadas desde</label>
+                <input type="date" value={reportFromDate} onChange={(event) => setReportFromDate(event.target.value)} />
+              </div>
+              <div className="field">
+                <label>Actualizadas hasta</label>
+                <input type="date" value={reportToDate} onChange={(event) => setReportToDate(event.target.value)} />
+              </div>
+            </div>
+          </section>
+
+          <section className="kpi-row reports-kpis">
+            <article className="card soft">
+              <div className="kpi-label">Cotizaciones filtradas</div>
+              <strong className="kpi-value">{reportQuotes.length}</strong>
+            </article>
+            <article className="card soft">
+              <div className="kpi-label">Conversión aceptada</div>
+              <strong className="kpi-value">{conversionRate}%</strong>
+            </article>
+            <article className="card soft">
+              <div className="kpi-label">Pipeline inicial</div>
+              <strong className="kpi-value">{formatCurrency(reportTotals.initial)}</strong>
+            </article>
+            <article className="card soft">
+              <div className="kpi-label">Pipeline mensual</div>
+              <strong className="kpi-value">{formatCurrency(reportTotals.monthly)}</strong>
+            </article>
+            <article className="card soft">
+              <div className="kpi-label">Renovación anual</div>
+              <strong className="kpi-value">{formatCurrency(reportTotals.annual)}</strong>
+            </article>
+            <article className="card soft">
+              <div className="kpi-label">Horas estimadas</div>
+              <strong className="kpi-value">{reportTotals.hours} h</strong>
+            </article>
+          </section>
+
+          <section className="grid two">
+            <section className="card">
+              <div className="card-title">
+                <div>
+                  <h2>Resumen por estado</h2>
+                  <p>Identifica cuánto hay en borrador, enviado, aceptado o rechazado.</p>
+                </div>
+              </div>
+
+              <div className="status-report-grid">
+                {(Object.keys(statusLabels) as QuoteStatus[]).map((status) => (
+                  <article className="status-report-card" key={status}>
+                    <div className="history-heading">
+                      <h4>{statusLabels[status]}</h4>
+                      <span className={`status-badge ${status}`}>{reportStatusSummary[status].count}</span>
+                    </div>
+                    <p>Inicial: <strong>{formatCurrency(reportStatusSummary[status].initial)}</strong></p>
+                    <p>Mensual: <strong>{formatCurrency(reportStatusSummary[status].monthly)}</strong></p>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="card">
+              <div className="card-title">
+                <div>
+                  <h2>Embudo rápido</h2>
+                  <p>Lectura comercial simple del estado actual de oportunidades.</p>
+                </div>
+              </div>
+              <div className="funnel-list">
+                <div><span>Borradores por completar</span><strong>{reportTotals.draft}</strong></div>
+                <div><span>Propuestas enviadas pendientes</span><strong>{reportTotals.sent}</strong></div>
+                <div><span>Proyectos aceptados</span><strong>{reportTotals.accepted}</strong></div>
+                <div><span>Propuestas rechazadas</span><strong>{reportTotals.rejected}</strong></div>
+              </div>
+              <div className="notice info">
+                Este reporte todavía es local. Si borras datos del navegador, se pierde. En Sprint 2 se moverá a base de datos con usuarios reales.
+              </div>
+            </section>
+          </section>
+
+          <section className="card">
+            <div className="card-title">
+              <div>
+                <h2>Oportunidades principales</h2>
+                <p>Ordenadas por pago inicial sugerido, usando los filtros actuales.</p>
+              </div>
+            </div>
+
+            {topReportQuotes.length === 0 ? (
+              <div className="notice">No hay cotizaciones que coincidan con los filtros.</div>
+            ) : (
+              <div className="report-table">
+                <div className="report-table-head">
+                  <span>Folio</span>
+                  <span>Cliente / proyecto</span>
+                  <span>Estado</span>
+                  <span>Inicial</span>
+                  <span>Mensual</span>
+                  <span>Acción</span>
+                </div>
+                {topReportQuotes.map((quote) => (
+                  <article className="report-table-row" key={quote.id}>
+                    <strong>{quote.folio}</strong>
+                    <div>
+                      <strong>{quote.client.company || quote.client.clientName || "Cliente pendiente"}</strong>
+                      <small>{quote.client.projectName || "Proyecto pendiente"}</small>
+                    </div>
+                    <span className={`status-badge ${quote.status}`}>{statusLabels[quote.status]}</span>
+                    <strong>{formatCurrency(quote.totals.suggestedInitialPayment)}</strong>
+                    <strong>{formatCurrency(quote.totals.suggestedMonthlyPayment)}</strong>
+                    <button className="btn primary small" onClick={() => loadQuote(quote)}>Abrir</button>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        </section>
+      )}
+
       {activeTab === "preview" && (
         <section className="grid printable-section">
           <div className="card no-print">
@@ -1368,13 +1682,13 @@ export function CotizadorApp() {
             <div className="card-title">
               <div>
                 <h2>GitHub</h2>
-                <p>Comandos sugeridos para cerrar el Sprint 1.3.</p>
+                <p>Comandos sugeridos para cerrar el Sprint 1.4.</p>
               </div>
             </div>
             <pre className="preview">{`git status
 git add .
-git commit -m "feat: agregar catalogo editable local"
-git push -u origin sprint-1-3-catalogo-editable`}</pre>
+git commit -m "feat: agregar reportes locales"
+git push -u origin sprint-1-4-reportes-locales`}</pre>
           </section>
           <section className="card">
             <div className="card-title">
@@ -1384,8 +1698,8 @@ git push -u origin sprint-1-3-catalogo-editable`}</pre>
               </div>
             </div>
             <div className="grid">
-              <div className="service-row"><div><h4>Sprint 1.3</h4><p>Catálogo editable local: crear, editar, activar, desactivar y ajustar precios.</p></div></div>
-              <div className="service-row"><div><h4>Sprint 1.4</h4><p>Reportes simples desde cotizaciones guardadas.</p></div></div>
+              <div className="service-row"><div><h4>Sprint 1.4</h4><p>Reportes simples desde cotizaciones guardadas, filtros y exportación CSV.</p></div></div>
+              <div className="service-row"><div><h4>Sprint 1.5</h4><p>Plantillas comerciales y texto editable para condiciones de venta.</p></div></div>
               <div className="service-row"><div><h4>Sprint 2</h4><p>Agregar login, base de datos y catálogo administrable en servidor.</p></div></div>
               <div className="service-row"><div><h4>Sprint 3</h4><p>Docker, PostgreSQL, deploy y PWA instalable.</p></div></div>
             </div>
@@ -1394,7 +1708,7 @@ git push -u origin sprint-1-3-catalogo-editable`}</pre>
       )}
 
       <p className="footer-note">
-        {companyProfile.name} · Sprint 1.3 · Catálogo editable · Sin datos sensibles · Base limpia para GitHub.
+        {companyProfile.name} · Sprint 1.4 · Reportes locales · Sin datos sensibles · Base limpia para GitHub.
       </p>
     </main>
   );
