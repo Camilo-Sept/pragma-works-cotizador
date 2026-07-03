@@ -36,6 +36,11 @@ Esta versión está hecha **a propósito sin Docker, Prisma, PostgreSQL, login n
   - ajustes comerciales,
   - horas estimadas.
 - Resumen listo para copiar a WhatsApp.
+- Guardado local de cotizaciones en `localStorage`.
+- Historial de cotizaciones recientes.
+- Folio automático tipo `PW-000001`.
+- Estados: borrador, enviada, aceptada y rechazada.
+- Duplicar, abrir y eliminar cotizaciones guardadas.
 - Disclaimer de confidencialidad.
 - Sección de reglas de precio editables en pantalla.
 - Sección con comandos sugeridos para GitHub.
@@ -49,6 +54,7 @@ Esta versión está hecha **a propósito sin Docker, Prisma, PostgreSQL, login n
 - Roles.
 - PDF real.
 - Guardado histórico de cotizaciones en servidor.
+  - La V1.1 guarda localmente en el navegador.
 - Deploy.
 - PWA instalable.
 
@@ -124,10 +130,13 @@ git push -u origin main
 
 ### Sprint 1.1
 
+Completado en rama de trabajo local:
+
 - Guardar cotizaciones en localStorage.
 - Listar cotizaciones recientes.
 - Duplicar cotización.
 - Marcar cotización como borrador/enviada/aceptada/rechazada.
+- Folio automático y vigencia.
 
 ### Sprint 1.2
 
