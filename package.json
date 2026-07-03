@@ -1,0 +1,26 @@
+{
+  "name": "pragma-works-cotizador-ui-v1",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cotizador UI V1 para Pragma Works. Versión inicial sin base de datos, lista para GitHub.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "16.2.10",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20.18.0"
+  }
+}
