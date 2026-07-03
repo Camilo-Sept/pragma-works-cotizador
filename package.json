@@ -11,6 +11,7 @@
     "db:validate": "prisma validate",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
+    "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset"
   },
@@ -29,5 +30,8 @@
   },
   "engines": {
     "node": ">=20.18.0 <21"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
   }
 }
