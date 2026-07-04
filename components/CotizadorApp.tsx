@@ -19,6 +19,7 @@ import {
   persistSavedQuotes,
   sortQuotesByUpdatedAt,
 } from "@/lib/quoteStorage";
+import { syncQuoteToDatabase } from "@/lib/quoteDatabaseClient";
 import type {
   BillingType,
   ClientDraft,
@@ -203,6 +204,14 @@ function getStartOfToday() {
   return today;
 }
 
+function getTodayInputValue() {
+  const today = getStartOfToday();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function getDaysUntil(dateValue?: string) {
   if (!dateValue) return null;
 
@@ -236,6 +245,19 @@ function isQuoteUpdatedInRange(quote: SavedQuote, fromDate: string, toDate: stri
 function getDateInputValue(value: string) {
   if (!value) return "";
   return value.slice(0, 10);
+}
+
+function isPastDateInputValue(value?: string) {
+  if (!value) return false;
+  return value.slice(0, 10) < getTodayInputValue();
+}
+
+function openDatePicker(inputId: string) {
+  const input = document.getElementById(inputId);
+  if (!(input instanceof HTMLInputElement)) return;
+
+  input.showPicker?.();
+  input.focus();
 }
 
 function escapeCsvValue(value: string | number) {
@@ -684,6 +706,23 @@ export function CotizadorApp() {
     window.setTimeout(() => setSavedMessage(""), 2200);
   }
 
+  function syncSavedQuoteToDatabase(quote: SavedQuote) {
+    void syncQuoteToDatabase(quote)
+      .then((result) => {
+        if (result.ok) {
+          showSavedMessage(`Cotización ${quote.folio} guardada localmente y sincronizada con BD.`);
+          return;
+        }
+
+        console.warn("No se pudo sincronizar la cotización con BD.", result.error);
+        showSavedMessage(`Cotización ${quote.folio} guardada localmente. No se pudo sincronizar con BD.`);
+      })
+      .catch((error) => {
+        console.warn("No se pudo sincronizar la cotización con BD.", error);
+        showSavedMessage(`Cotización ${quote.folio} guardada localmente. No se pudo sincronizar con BD.`);
+      });
+  }
+
   function persistCustomServices(nextServices: ServiceItem[]) {
     setCustomServices(nextServices);
     window.localStorage.setItem(CUSTOM_SERVICES_KEY, JSON.stringify(nextServices));
@@ -948,6 +987,16 @@ export function CotizadorApp() {
       return;
     }
 
+    if (isPastDateInputValue(validUntil)) {
+      showSavedMessage("La vigencia de la cotización no puede ser una fecha pasada.");
+      return;
+    }
+
+    if (isPastDateInputValue(client.targetDeliveryDate)) {
+      showSavedMessage("La fecha objetivo de entrega no puede ser una fecha pasada.");
+      return;
+    }
+
     const quote = {
       ...buildSavedQuote(status),
       lockedAt: status === "draft" ? undefined : (currentQuote?.lockedAt ?? new Date().toISOString()),
@@ -960,6 +1009,7 @@ export function CotizadorApp() {
     persistQuotes(nextQuotes);
     setCurrentQuoteId(quote.id);
     setQuoteStatus(status);
+    syncSavedQuoteToDatabase(quote);
     showSavedMessage(`Cotización ${quote.folio} guardada como ${statusLabels[status]}.`);
   }
 
@@ -1377,7 +1427,24 @@ export function CotizadorApp() {
                 </div>
                 <div className="field">
                   <label>Vigencia</label>
-                  <input disabled={!canEditCurrentQuote} type="date" value={validUntil} onChange={(event) => setValidUntil(event.target.value)} />
+                  <div className="date-input-row">
+                    <input
+                      id="quote-valid-until"
+                      disabled={!canEditCurrentQuote}
+                      type="date"
+                      min={getTodayInputValue()}
+                      value={validUntil}
+                      onChange={(event) => setValidUntil(event.target.value)}
+                    />
+                    <button
+                      className="btn ghost date-picker-button"
+                      disabled={!canEditCurrentQuote}
+                      type="button"
+                      onClick={() => openDatePicker("quote-valid-until")}
+                    >
+                      Calendario
+                    </button>
+                  </div>
                 </div>
                 <div className="field">
                   <label>Estado</label>
@@ -1394,12 +1461,24 @@ export function CotizadorApp() {
                 </div>
                 <div className="field">
                   <label>Fecha objetivo de entrega</label>
-                  <input
-                  disabled={!canEditCurrentQuote}
-                    type="date"
-                    value={client.targetDeliveryDate ?? ""}
-                    onChange={(event) => setClient({ ...client, targetDeliveryDate: event.target.value })}
-                  />
+                  <div className="date-input-row">
+                    <input
+                      id="quote-target-delivery-date"
+                      disabled={!canEditCurrentQuote}
+                      type="date"
+                      min={getTodayInputValue()}
+                      value={client.targetDeliveryDate ?? ""}
+                      onChange={(event) => setClient({ ...client, targetDeliveryDate: event.target.value })}
+                    />
+                    <button
+                      className="btn ghost date-picker-button"
+                      disabled={!canEditCurrentQuote}
+                      type="button"
+                      onClick={() => openDatePicker("quote-target-delivery-date")}
+                    >
+                      Calendario
+                    </button>
+                  </div>
                 </div>
                 <div className="field full">
                   <label>Notas del levantamiento</label>
