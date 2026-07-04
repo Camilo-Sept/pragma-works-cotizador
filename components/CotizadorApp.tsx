@@ -2457,6 +2457,22 @@ git push -u origin sprint-1-4-reportes-locales`}</pre>
         </section>
       )}
 
+      {activeTab === "quote" && (
+        <section className="mobile-total-bar no-print" aria-label="Resumen rápido móvil">
+          <div className="mobile-total-main">
+            <span>Total inicial</span>
+            <strong>{formatCurrency(totals.suggestedInitialPayment)}</strong>
+          </div>
+          <div className="mobile-total-secondary">
+            <span>Mensual</span>
+            <strong>{formatCurrency(totals.suggestedMonthlyPayment)}</strong>
+          </div>
+          <button className="btn primary" onClick={openPrintPreview}>
+            Ver PDF
+          </button>
+        </section>
+      )}
+
       <p className="footer-note">
         {companyProfile.name} · Sprint 1.4 · Reportes locales · Sin datos sensibles · Base limpia para GitHub.
       </p>
