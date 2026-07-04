@@ -1,8 +1,8 @@
 # Pragma Works Cotizador Pro - UI V1
 
-Base inicial del cotizador comercial para servicios de software, automatización, soporte e IA.
+Cotizador comercial para servicios de software, automatización, soporte e IA.
 
-Esta versión está hecha **a propósito sin Docker, Prisma, PostgreSQL, login ni backend**, para validar primero la pantalla, el flujo comercial y las reglas de cálculo antes de meter infraestructura.
+La app ya incluye UI local, catálogo, reglas comerciales, historial local, reportes, vista/PDF desde navegador, roles simulados, PostgreSQL local con Docker, Prisma, seed inicial y sincronización de cotizaciones a BD con fallback local.
 
 ## Stack
 
@@ -10,8 +10,11 @@ Esta versión está hecha **a propósito sin Docker, Prisma, PostgreSQL, login n
 - React
 - TypeScript
 - CSS puro
-- Catálogo local en archivos TypeScript
-- localStorage para conceptos agregados manualmente
+- Prisma
+- PostgreSQL
+- Docker Compose para desarrollo local
+- localStorage como guardado inmediato/fallback
+- API routes de Next.js para catálogo, reglas, cotizaciones y healthcheck
 
 ## Qué incluye esta V1
 
@@ -54,28 +57,28 @@ Esta versión está hecha **a propósito sin Docker, Prisma, PostgreSQL, login n
 - Disclaimer de confidencialidad.
 - Sección de reglas de precio editables en pantalla.
 - Sección con comandos sugeridos para GitHub.
+- Catálogo y reglas desde PostgreSQL con fallback local.
+- Guardado local de cotizaciones y sincronización posterior a PostgreSQL.
+- Endpoint `/api/health` para validar conexión con base de datos.
 
 ## Qué NO incluye todavía
 
-- Base de datos.
-- Prisma.
-- Docker.
-- Autenticación.
-- Roles.
+- Autenticación real.
+- Roles de servidor.
 - PDF generado con librería dedicada.
-- Guardado histórico de cotizaciones en servidor.
-  - La V1.1 guarda localmente en el navegador.
-- Deploy.
 - PWA instalable.
 
-Eso se agrega después de validar que la UI y los cálculos estén correctos.
+Los roles actuales son simulados en UI. El login real queda para un sprint posterior.
 
 ## Cómo correr localmente
 
 Desde la carpeta del proyecto:
 
 ```bash
+nvm use
 npm install
+docker compose up -d
+npm run db:seed
 npm run dev
 ```
 
@@ -90,7 +93,23 @@ http://localhost:3000
 ```bash
 npm run typecheck
 npm run build
+npm run db:validate
+npm run db:deploy
+npm run db:seed
 ```
+
+## Deploy
+
+La ruta recomendada es:
+
+- Vercel para la app Next.js completa.
+- Railway PostgreSQL para la base de datos.
+- Variables de ambiente configuradas en Vercel, no en GitHub.
+
+Ver:
+
+- `docs/VERCEL_RAILWAY_DEPLOY.md`
+- `docs/DEMO_CHECKLIST.md`
 
 ## Estructura principal
 
@@ -107,6 +126,12 @@ data/
   services.ts
 lib/
   pricing.ts
+  prisma.ts
+  quoteDatabaseClient.ts
+prisma/
+  schema.prisma
+  migrations/
+  seed.js
 types/
   quote.ts
 ```
@@ -131,9 +156,8 @@ git push -u origin main
 
 - No subir `node_modules`.
 - No subir `.next`.
-- No subir `.env` cuando más adelante exista.
+- No subir `.env`.
 - No meter contraseñas ni secretos al repo.
-- No agregar base de datos hasta que la cotización funcione correctamente en UI.
 - Hacer commits pequeños por funcionalidad.
 
 ## Próximos sprints sugeridos

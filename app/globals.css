@@ -239,6 +239,17 @@ textarea:focus {
   box-shadow: 0 0 0 3px rgba(47, 140, 255, 0.15);
 }
 
+.date-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.date-picker-button {
+  min-height: 43px;
+}
+
 select option {
   background: #0d1424;
   color: white;
@@ -480,6 +491,10 @@ select option {
 
   .form-grid,
   .item-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .date-input-row {
     grid-template-columns: 1fr;
   }
 
@@ -1773,4 +1788,3 @@ textarea:disabled {
     display: none !important;
   }
 }
-
