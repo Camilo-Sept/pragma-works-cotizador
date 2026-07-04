@@ -275,6 +275,9 @@ function getNextRevisionFolio(quotes: SavedQuote[], quote: SavedQuote) {
 export function CotizadorApp() {
   const [activeTab, setActiveTab] = useState<"quote" | "history" | "reports" | "preview" | "catalog" | "rules" | "security" | "github">("quote");
   const [currentRole, setCurrentRole] = useState<UserRole>("admin");
+  const [baseCatalogServices, setBaseCatalogServices] = useState<ServiceItem[]>(initialServices);
+  const [catalogSource, setCatalogSource] = useState<"database" | "fallback">("fallback");
+  const [rulesSource, setRulesSource] = useState<"database" | "fallback">("fallback");
   const [client, setClient] = useState<ClientDraft>(defaultClient);
   const [mode, setMode] = useState<QuoteMode>("hybrid");
   const [sourceCodeOption, setSourceCodeOption] = useState<SourceCodeOption>("none");
@@ -332,6 +335,54 @@ export function CotizadorApp() {
     }
   }, []);
 
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadDefaultsFromDatabase() {
+      try {
+        const [servicesResponse, rulesResponse] = await Promise.all([
+          fetch("/api/services", { cache: "no-store" }),
+          fetch("/api/pricing-rules/default", { cache: "no-store" }),
+        ]);
+
+        if (servicesResponse.ok) {
+          const servicesData = (await servicesResponse.json()) as { services?: ServiceItem[] };
+          if (!cancelled && Array.isArray(servicesData.services) && servicesData.services.length > 0) {
+            setBaseCatalogServices(servicesData.services);
+            setCatalogSource("database");
+          }
+        } else if (!cancelled) {
+          setCatalogSource("fallback");
+        }
+
+        if (rulesResponse.ok) {
+          const rulesData = (await rulesResponse.json()) as { rules?: PricingRules };
+          if (!cancelled && rulesData.rules) {
+            setRules(rulesData.rules);
+            setRulesSource("database");
+          }
+        } else if (!cancelled) {
+          setRulesSource("fallback");
+        }
+      } catch (error) {
+        console.warn("No se pudo cargar catálogo/reglas desde BD. Se usa respaldo local.", error);
+
+        if (!cancelled) {
+          setBaseCatalogServices(initialServices);
+          setCatalogSource("fallback");
+          setRulesSource("fallback");
+        }
+      }
+    }
+
+    loadDefaultsFromDatabase();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     window.localStorage.setItem(CURRENT_ROLE_KEY, currentRole);
 
@@ -348,12 +399,12 @@ export function CotizadorApp() {
     window.localStorage.setItem(SERVICE_OVERRIDES_KEY, JSON.stringify(serviceOverrides));
   }, [serviceOverrides]);
 
-  const baseServicesWithOverrides = useMemo(
-    () => initialServices.map((service) => serviceOverrides[service.id] ?? service),
-    [serviceOverrides],
+  const baseServicesWithOverrides = useMemo<ServiceItem[]>(
+    () => baseCatalogServices.map((service: ServiceItem) => serviceOverrides[service.id] ?? service),
+    [baseCatalogServices, serviceOverrides],
   );
 
-  const catalogServices = useMemo(
+  const catalogServices = useMemo<ServiceItem[]>(
     () => [...baseServicesWithOverrides, ...customServices],
     [baseServicesWithOverrides, customServices],
   );
@@ -702,7 +753,7 @@ export function CotizadorApp() {
       source: "catalog",
     };
 
-    const isBaseService = initialServices.some((service) => service.id === normalizedDraft.id);
+    const isBaseService = baseCatalogServices.some((service) => service.id === normalizedDraft.id);
 
     if (isBaseService) {
       persistServiceOverrides({ ...serviceOverrides, [normalizedDraft.id]: normalizedDraft });
@@ -749,7 +800,7 @@ export function CotizadorApp() {
     }
 
     const updated: ServiceItem = { ...service, active: !service.active };
-    const isBaseService = initialServices.some((baseService) => baseService.id === service.id);
+    const isBaseService = baseCatalogServices.some((baseService) => baseService.id === service.id);
 
     if (isBaseService) {
       persistServiceOverrides({ ...serviceOverrides, [service.id]: updated });
@@ -1208,9 +1259,9 @@ export function CotizadorApp() {
           </div>
         </section>
         <div className="pill-row">
-          <span className="pill">UI V1 sin BD</span>
+          <span className="pill">Catálogo: {catalogSource === "database" ? "BD" : "local"}</span>
           <span className="pill">Sprint 1.6</span>
-          <span className="pill">Reglas de negocio</span>
+          <span className="pill">Reglas: {rulesSource === "database" ? "BD" : "local"}</span>
           <span className="pill">Rol: {roleLabels[currentRole]}</span>
         </div>
       </header>
@@ -2330,7 +2381,7 @@ export function CotizadorApp() {
                 <div className="notice">No hay servicios con esos filtros.</div>
               ) : (
                 filteredCatalogServices.map((service) => {
-                  const isBaseService = initialServices.some((baseService) => baseService.id === service.id);
+                  const isBaseService = baseCatalogServices.some((baseService) => baseService.id === service.id);
                   const hasOverride = Boolean(serviceOverrides[service.id]);
                   const isCustomService = customServices.some((customService) => customService.id === service.id);
 
