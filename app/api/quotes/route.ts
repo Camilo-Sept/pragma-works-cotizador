@@ -10,7 +10,16 @@ import {
   SourceCodeOption,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import type { SavedQuote } from "@/types/quote";
+import type {
+  BillingType as AppBillingType,
+  PricingRules,
+  QuoteItem,
+  QuoteMode as AppQuoteMode,
+  QuoteStatus as AppQuoteStatus,
+  SavedQuote,
+  ServiceCategory as AppServiceCategory,
+  SourceCodeOption as AppSourceCodeOption,
+} from "@/types/quote";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +64,56 @@ const serviceCategoryMap = {
 const serviceSourceMap = {
   catalog: ServiceSource.CATALOG,
   manual: ServiceSource.MANUAL,
+} as const;
+
+type DatabaseQuote = Prisma.QuoteGetPayload<{
+  include: {
+    client: true;
+    items: true;
+  };
+}>;
+
+const appStatusMap = {
+  DRAFT: "draft",
+  SENT: "sent",
+  ACCEPTED: "accepted",
+  REJECTED: "rejected",
+} as const satisfies Record<keyof typeof QuoteStatus, AppQuoteStatus>;
+
+const appModeMap = {
+  ONE_TIME: "one_time",
+  RENTAL: "rental",
+  HYBRID: "hybrid",
+} as const satisfies Record<keyof typeof QuoteMode, AppQuoteMode>;
+
+const appSourceCodeOptionMap = {
+  NONE: "none",
+  DELIVERY_AFTER_PAYMENT: "delivery_after_payment",
+  FULL_BUYOUT: "full_buyout",
+} as const satisfies Record<keyof typeof SourceCodeOption, AppSourceCodeOption>;
+
+const appBillingTypeMap = {
+  ONE_TIME: "one_time",
+  MONTHLY: "monthly",
+  ANNUAL: "annual",
+  HOURLY: "hourly",
+} as const satisfies Record<keyof typeof BillingType, AppBillingType>;
+
+const appCategoryMap = {
+  WEB: "web",
+  SYSTEM: "system",
+  MOBILE: "mobile",
+  DESKTOP: "desktop",
+  AUTOMATION: "automation",
+  AI: "ai",
+  SUPPORT: "support",
+  INFRASTRUCTURE: "infrastructure",
+  OTHER: "other",
+} as const satisfies Record<keyof typeof ServiceCategory, AppServiceCategory>;
+
+const appServiceSourceMap = {
+  CATALOG: "catalog",
+  MANUAL: "manual",
 } as const;
 
 function decimal(value: unknown) {
@@ -103,6 +162,99 @@ function quoteSelect() {
   };
 }
 
+function getDateOnly(value: Date | null) {
+  return value ? value.toISOString().slice(0, 10) : undefined;
+}
+
+function getProjectName(internalNotes: string | null) {
+  const prefix = "Proyecto: ";
+  if (!internalNotes?.startsWith(prefix)) return "";
+  return internalNotes.slice(prefix.length);
+}
+
+function mapRulesSnapshot(value: Prisma.JsonValue): PricingRules {
+  const rules = value as Partial<Record<keyof PricingRules, unknown>>;
+  const numberValue = (key: keyof PricingRules) => {
+    const parsed = Number(rules[key]);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  return {
+    riskPercent: numberValue("riskPercent"),
+    urgencyPercent: numberValue("urgencyPercent"),
+    commissionPercent: numberValue("commissionPercent"),
+    discountPercent: numberValue("discountPercent"),
+    sourceDeliveryPercent: numberValue("sourceDeliveryPercent"),
+    sourceBuyoutPercent: numberValue("sourceBuyoutPercent"),
+    rentalInitialPercent: numberValue("rentalInitialPercent"),
+    rentalMonthlyPercent: numberValue("rentalMonthlyPercent"),
+    hybridInitialPercent: numberValue("hybridInitialPercent"),
+    hybridMonthlyPercent: numberValue("hybridMonthlyPercent"),
+    minimumOneTimePrice: numberValue("minimumOneTimePrice"),
+    minimumMonthlyPrice: numberValue("minimumMonthlyPrice"),
+    websiteAnnualRenewal: numberValue("websiteAnnualRenewal"),
+  };
+}
+
+function mapQuoteFromDatabase(quote: DatabaseQuote): SavedQuote {
+  const items: QuoteItem[] = quote.items.map((item) => ({
+    id: item.id,
+    serviceId: item.serviceId ?? undefined,
+    name: item.name,
+    category: appCategoryMap[item.category],
+    billingType: appBillingTypeMap[item.billingType],
+    unitPrice: Number(item.unitPrice),
+    quantity: Number(item.quantity),
+    estimatedHours: Number(item.estimatedHours),
+    source: appServiceSourceMap[item.source],
+    requiresApproval: item.requiresApproval,
+    notes: item.notes ?? undefined,
+  }));
+
+  return {
+    id: quote.id,
+    folio: quote.folio,
+    status: appStatusMap[quote.status],
+    client: {
+      clientName: quote.client.clientName,
+      company: quote.client.company ?? "",
+      phone: quote.client.phone ?? "",
+      email: quote.client.email ?? "",
+      projectName: getProjectName(quote.internalNotes),
+      targetDeliveryDate: getDateOnly(quote.targetDeliveryDate),
+      notes: quote.clientNotes ?? quote.client.notes ?? "",
+    },
+    mode: appModeMap[quote.mode],
+    sourceCodeOption: appSourceCodeOptionMap[quote.sourceCodeOption],
+    rules: mapRulesSnapshot(quote.rulesSnapshot),
+    items,
+    totals: {
+      oneTimeSubtotal: Number(quote.oneTimeSubtotal),
+      monthlySubtotal: Number(quote.monthlySubtotal),
+      annualSubtotal: Number(quote.annualSubtotal),
+      hoursSubtotal: Number(quote.hoursSubtotal),
+      riskCharge: Number(quote.riskCharge),
+      urgencyCharge: Number(quote.urgencyCharge),
+      commissionCharge: Number(quote.commissionCharge),
+      discountAmount: Number(quote.discountAmount),
+      sourceCodeCharge: Number(quote.sourceCodeCharge),
+      suggestedInitialPayment: Number(quote.suggestedInitialPayment),
+      suggestedMonthlyPayment: Number(quote.suggestedMonthlyPayment),
+      suggestedAnnualRenewal: Number(quote.suggestedAnnualRenewal),
+      estimatedHours: Number(quote.estimatedHours),
+      effectiveHourlyRate: Number(quote.effectiveHourlyRate),
+      commercialNotes: [],
+    },
+    createdAt: quote.createdAt.toISOString(),
+    updatedAt: quote.updatedAt.toISOString(),
+    validUntil: quote.validUntil.toISOString().slice(0, 10),
+    revisionOf: quote.revisionOfId ?? undefined,
+    revisionNumber: quote.revisionNumber ?? undefined,
+    archivedAt: quote.archivedAt?.toISOString(),
+    lockedAt: quote.lockedAt?.toISOString(),
+  };
+}
+
 export async function GET() {
   try {
     const quotes = await prisma.quote.findMany({
@@ -111,7 +263,7 @@ export async function GET() {
       take: 20,
     });
 
-    return NextResponse.json({ ok: true, quotes });
+    return NextResponse.json({ ok: true, quotes: quotes.map(mapQuoteFromDatabase) });
   } catch (error) {
     console.error("Error loading quotes from database", error);
 

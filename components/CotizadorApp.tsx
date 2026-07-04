@@ -294,12 +294,26 @@ function getNextRevisionFolio(quotes: SavedQuote[], quote: SavedQuote) {
   return `${getBaseFolio(quote.folio)}-R${nextRevision}`;
 }
 
+function mergeSavedQuotes(localQuotes: SavedQuote[], databaseQuotes: SavedQuote[]) {
+  const quotesById = new Map<string, SavedQuote>();
+
+  for (const quote of [...localQuotes, ...databaseQuotes]) {
+    const current = quotesById.get(quote.id);
+    if (!current || new Date(quote.updatedAt).getTime() >= new Date(current.updatedAt).getTime()) {
+      quotesById.set(quote.id, quote);
+    }
+  }
+
+  return sortQuotesByUpdatedAt([...quotesById.values()]);
+}
+
 export function CotizadorApp() {
   const [activeTab, setActiveTab] = useState<"quote" | "history" | "reports" | "preview" | "catalog" | "rules" | "security" | "github">("quote");
   const [currentRole, setCurrentRole] = useState<UserRole>("admin");
   const [baseCatalogServices, setBaseCatalogServices] = useState<ServiceItem[]>(initialServices);
   const [catalogSource, setCatalogSource] = useState<"database" | "fallback">("fallback");
   const [rulesSource, setRulesSource] = useState<"database" | "fallback">("fallback");
+  const [quotesSource, setQuotesSource] = useState<"database" | "local">("local");
   const [client, setClient] = useState<ClientDraft>(defaultClient);
   const [mode, setMode] = useState<QuoteMode>("hybrid");
   const [sourceCodeOption, setSourceCodeOption] = useState<SourceCodeOption>("none");
@@ -348,13 +362,45 @@ export function CotizadorApp() {
       }
     }
 
-    setSavedQuotes(loadSavedQuotes());
+    const localQuotes = loadSavedQuotes();
+    setSavedQuotes(localQuotes);
     setValidUntil(getDefaultValidUntil());
 
     const storedRole = window.localStorage.getItem(CURRENT_ROLE_KEY);
     if (isUserRole(storedRole)) {
       setCurrentRole(storedRole);
     }
+
+    let cancelled = false;
+
+    async function loadQuotesFromDatabase() {
+      try {
+        const response = await fetch("/api/quotes", { cache: "no-store" });
+        if (!response.ok) {
+          setQuotesSource("local");
+          return;
+        }
+
+        const data = (await response.json()) as { ok?: boolean; quotes?: SavedQuote[] };
+        if (cancelled || !data.ok || !Array.isArray(data.quotes)) return;
+
+        const mergedQuotes = mergeSavedQuotes(localQuotes, data.quotes);
+        setSavedQuotes(mergedQuotes);
+        persistSavedQuotes(mergedQuotes);
+        setQuotesSource("database");
+      } catch (error) {
+        console.warn("No se pudo cargar historial desde BD. Se usa historial local.", error);
+        if (!cancelled) {
+          setQuotesSource("local");
+        }
+      }
+    }
+
+    loadQuotesFromDatabase();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
 
@@ -1312,6 +1358,7 @@ export function CotizadorApp() {
           <span className="pill">Catálogo: {catalogSource === "database" ? "BD" : "local"}</span>
           <span className="pill">Sprint 1.6</span>
           <span className="pill">Reglas: {rulesSource === "database" ? "BD" : "local"}</span>
+          <span className="pill">Historial: {quotesSource === "database" ? "BD" : "local"}</span>
           <span className="pill">Rol: {roleLabels[currentRole]}</span>
         </div>
       </header>
@@ -1774,7 +1821,7 @@ export function CotizadorApp() {
             <div className="card-title">
               <div>
                 <h2>Historial de cotizaciones</h2>
-                <p>Guardado local en este navegador. Después se migrará a base de datos.</p>
+                <p>{quotesSource === "database" ? "Sincronizado desde PostgreSQL con respaldo local." : "Guardado local en este navegador."}</p>
               </div>
               <button className="btn ghost" disabled={!canCreateQuotes} onClick={resetQuote}>Nueva cotización</button>
             </div>
