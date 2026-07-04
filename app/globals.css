@@ -59,6 +59,46 @@ a {
   padding: 28px 0 42px;
 }
 
+.auth-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+}
+
+.login-card {
+  width: min(460px, 100%);
+}
+
+.login-brand {
+  margin-bottom: 22px;
+}
+
+.login-form {
+  display: grid;
+  gap: 14px;
+}
+
+.login-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.form-alert {
+  border: 1px solid rgba(246, 200, 95, 0.3);
+  border-radius: 12px;
+  background: rgba(246, 200, 95, 0.1);
+  color: var(--warning);
+  padding: 11px 12px;
+  font-size: 0.9rem;
+}
+
+.form-alert.danger {
+  border-color: rgba(255, 107, 107, 0.34);
+  background: rgba(255, 107, 107, 0.1);
+  color: #ffc5c5;
+}
+
 .topbar {
   display: flex;
   align-items: center;

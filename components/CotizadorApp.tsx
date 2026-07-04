@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { companyProfile } from "@/data/company";
 import { defaultPricingRules } from "@/data/pricingRules";
 import { initialServices } from "@/data/services";
@@ -38,6 +38,13 @@ const CUSTOM_SERVICES_KEY = "pragma-works-custom-services-v1";
 const SERVICE_OVERRIDES_KEY = "pragma-works-service-overrides-v1";
 
 const CURRENT_ROLE_KEY = "pragma-works-current-role-v1";
+
+type AuthUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+};
 
 type PermissionKey =
   | "create_quote"
@@ -340,6 +347,11 @@ export function CotizadorApp() {
   const [reportSearch, setReportSearch] = useState("");
   const [reportFromDate, setReportFromDate] = useState("");
   const [reportToDate, setReportToDate] = useState("");
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [loginEmail, setLoginEmail] = useState("admin@pragmaworks.mx");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
 
   useEffect(() => {
     const raw = window.localStorage.getItem(CUSTOM_SERVICES_KEY);
@@ -403,6 +415,34 @@ export function CotizadorApp() {
     };
   }, []);
 
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSession() {
+      try {
+        const response = await fetch("/api/auth/me", { cache: "no-store" });
+        const data = (await response.json()) as { ok?: boolean; user?: AuthUser | null };
+
+        if (!cancelled && response.ok && data.ok && data.user) {
+          setAuthUser(data.user);
+          setCurrentRole(data.user.role);
+        }
+      } catch (error) {
+        console.warn("No se pudo validar la sesión.", error);
+      } finally {
+        if (!cancelled) {
+          setAuthLoading(false);
+        }
+      }
+    }
+
+    loadSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1342,6 +1382,99 @@ export function CotizadorApp() {
     setValidUntil(getDefaultValidUntil());
   }
 
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLoginError("");
+
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+      });
+      const data = (await response.json()) as { ok?: boolean; user?: AuthUser; error?: string };
+
+      if (!response.ok || !data.ok || !data.user) {
+        setLoginError(data.error ?? "No se pudo iniciar sesión.");
+        return;
+      }
+
+      setAuthUser(data.user);
+      setCurrentRole(data.user.role);
+      setLoginPassword("");
+      showSavedMessage(`Sesión iniciada: ${data.user.name}`);
+    } catch (error) {
+      console.error("No se pudo iniciar sesión.", error);
+      setLoginError("No se pudo conectar con el servidor.");
+    }
+  }
+
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+    setAuthUser(null);
+    setLoginPassword("");
+    setLoginError("");
+    showSavedMessage("Sesión cerrada.");
+  }
+
+  if (authLoading) {
+    return (
+      <main className="app-shell auth-shell">
+        <section className="card login-card">
+          <div className="brand login-brand">
+            <div className="brand-mark">PW</div>
+            <div>
+              <h1 className="brand-title">{companyProfile.name}</h1>
+              <p className="brand-subtitle">Validando sesión...</p>
+            </div>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  if (!authUser) {
+    return (
+      <main className="app-shell auth-shell">
+        <section className="card login-card">
+          <div className="brand login-brand">
+            <div className="brand-mark">PW</div>
+            <div>
+              <h1 className="brand-title">{companyProfile.name}</h1>
+              <p className="brand-subtitle">{companyProfile.descriptor} · Acceso interno</p>
+            </div>
+          </div>
+
+          <form className="login-form" onSubmit={handleLogin}>
+            <div className="field">
+              <label>Correo</label>
+              <input
+                autoComplete="email"
+                inputMode="email"
+                value={loginEmail}
+                onChange={(event) => setLoginEmail(event.target.value)}
+                placeholder="admin@pragmaworks.mx"
+              />
+            </div>
+            <div className="field">
+              <label>Contraseña</label>
+              <input
+                autoComplete="current-password"
+                type="password"
+                value={loginPassword}
+                onChange={(event) => setLoginPassword(event.target.value)}
+                placeholder="Contraseña"
+              />
+            </div>
+            {loginError && <div className="form-alert danger">{loginError}</div>}
+            <button className="btn primary" type="submit">Entrar</button>
+            <p className="login-help">Demo admin: admin@pragmaworks.mx / Pragma2026!</p>
+          </form>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -1359,6 +1492,7 @@ export function CotizadorApp() {
           <span className="pill">Sprint 1.6</span>
           <span className="pill">Reglas: {rulesSource === "database" ? "BD" : "local"}</span>
           <span className="pill">Historial: {quotesSource === "database" ? "BD" : "local"}</span>
+          <span className="pill">Usuario: {authUser.name}</span>
           <span className="pill">Rol: {roleLabels[currentRole]}</span>
         </div>
       </header>
@@ -1367,16 +1501,12 @@ export function CotizadorApp() {
 
       <section className="card security-strip no-print">
         <div>
-          <strong>Modo de permisos local: {roleLabels[currentRole]}</strong>
-          <p>{roleDescriptions[currentRole]} Esta es una simulación de UI; el login real va con backend, sesiones y roles de servidor.</p>
+          <strong>Sesión activa: {authUser.name}</strong>
+          <p>{roleDescriptions[currentRole]} El rol viene del backend y la sesión se guarda en cookie segura.</p>
         </div>
         <div className="field role-field">
-          <label>Probar vista como</label>
-          <select value={currentRole} onChange={(event) => setCurrentRole(event.target.value as UserRole)}>
-            {(Object.keys(roleLabels) as UserRole[]).map((role) => (
-              <option key={role} value={role}>{roleLabels[role]}</option>
-            ))}
-          </select>
+          <label>{authUser.email}</label>
+          <button className="btn ghost" type="button" onClick={handleLogout}>Cerrar sesión</button>
         </div>
       </section>
 

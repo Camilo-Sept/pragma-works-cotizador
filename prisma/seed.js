@@ -4,7 +4,9 @@ const {
   BillingType,
   ServiceCategory,
   ServiceSource,
+  UserRole,
 } = require("@prisma/client");
+const { pbkdf2Sync, randomBytes } = require("crypto");
 
 const prisma = new PrismaClient();
 
@@ -302,8 +304,35 @@ const services = [
   },
 ];
 
+const demoUsers = [
+  {
+    name: "Administrador Pragma Works",
+    email: "admin@pragmaworks.mx",
+    role: UserRole.ADMIN,
+    password: "Pragma2026!",
+  },
+  {
+    name: "Ventas Pragma Works",
+    email: "ventas@pragmaworks.mx",
+    role: UserRole.VENTAS,
+    password: "Ventas2026!",
+  },
+  {
+    name: "Lectura Pragma Works",
+    email: "lectura@pragmaworks.mx",
+    role: UserRole.LECTURA,
+    password: "Lectura2026!",
+  },
+];
+
 function decimal(value) {
   return new Prisma.Decimal(value);
+}
+
+function hashPassword(password) {
+  const salt = randomBytes(16).toString("base64url");
+  const hash = pbkdf2Sync(password, salt, 120_000, 32, "sha256").toString("base64url");
+  return `pbkdf2$120000$${salt}$${hash}`;
 }
 
 function serviceData(service) {
@@ -383,16 +412,55 @@ async function seedServices() {
   return { created, updated };
 }
 
+async function seedUsers() {
+  let created = 0;
+  let updated = 0;
+
+  for (const user of demoUsers) {
+    const existing = await prisma.user.findUnique({
+      where: { email: user.email },
+    });
+
+    if (existing) {
+      await prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          name: user.name,
+          role: user.role,
+          active: true,
+        },
+      });
+      updated += 1;
+      continue;
+    }
+
+    await prisma.user.create({
+      data: {
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        active: true,
+        passwordHash: hashPassword(user.password),
+      },
+    });
+    created += 1;
+  }
+
+  return { created, updated };
+}
+
 async function main() {
   console.log("🌱 Iniciando seed local de Pragma Works...");
 
   const pricingRulesResult = await seedPricingRules();
   const servicesResult = await seedServices();
+  const usersResult = await seedUsers();
 
   console.log(`✅ Reglas comerciales: ${pricingRulesResult}`);
   console.log(
     `✅ Servicios de catálogo: ${servicesResult.created} creados, ${servicesResult.updated} actualizados`,
   );
+  console.log(`✅ Usuarios demo: ${usersResult.created} creados, ${usersResult.updated} actualizados`);
   console.log("🌱 Seed terminado");
 }
 
