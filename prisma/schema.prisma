@@ -1,13 +1,13 @@
 // Prisma schema inicial para el backend del cotizador.
-// Este archivo todavía NO conecta la UI al servidor; sólo define la estructura segura
-// que usaremos para migrar cotizaciones, usuarios, roles, catálogo y auditoría a PostgreSQL.
+// Este archivo define la estructura segura para cotizaciones, usuarios, roles,
+// catálogo, auditoría y autorizaciones comerciales.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider          = "postgresql"
   url               = env("DATABASE_URL")
   shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
@@ -75,6 +75,54 @@ enum AuditAction {
   LOGIN           @map("login")
   LOGOUT          @map("logout")
   LOGIN_FAILED    @map("login_failed")
+
+  USER_CREATE       @map("user_create")
+  USER_UPDATE       @map("user_update")
+  USER_DISABLE      @map("user_disable")
+  USER_ENABLE       @map("user_enable")
+  PASSWORD_RESET    @map("password_reset")
+  PERMISSION_UPDATE @map("permission_update")
+
+  DISCOUNT_APPLIED             @map("discount_applied")
+  DISCOUNT_APPROVAL_REQUESTED @map("discount_approval_requested")
+  DISCOUNT_APPROVED           @map("discount_approved")
+  DISCOUNT_REJECTED           @map("discount_rejected")
+
+  PRICE_CHANGE_REQUESTED @map("price_change_requested")
+  PRICE_CHANGE_APPROVED  @map("price_change_approved")
+  PRICE_CHANGE_REJECTED  @map("price_change_rejected")
+
+  MANUAL_ITEM_REQUESTED @map("manual_item_requested")
+  MANUAL_ITEM_APPROVED  @map("manual_item_approved")
+  MANUAL_ITEM_REJECTED  @map("manual_item_rejected")
+
+  CATALOG_PRICE_CHANGE_REQUESTED @map("catalog_price_change_requested")
+  CATALOG_PRICE_CHANGE_APPROVED  @map("catalog_price_change_approved")
+  CATALOG_PRICE_CHANGE_REJECTED  @map("catalog_price_change_rejected")
+
+  PRICING_RULE_CHANGE_REQUESTED @map("pricing_rule_change_requested")
+  PRICING_RULE_CHANGE_APPROVED  @map("pricing_rule_change_approved")
+  PRICING_RULE_CHANGE_REJECTED  @map("pricing_rule_change_rejected")
+
+  APPROVAL_REQUESTED @map("approval_requested")
+  APPROVAL_APPROVED  @map("approval_approved")
+  APPROVAL_REJECTED  @map("approval_rejected")
+  APPROVAL_CANCELLED @map("approval_cancelled")
+}
+
+enum ApprovalType {
+  DISCOUNT_OVER_10        @map("discount_over_10")
+  QUOTE_ITEM_PRICE_CHANGE @map("quote_item_price_change")
+  MANUAL_PRICED_ITEM      @map("manual_priced_item")
+  CATALOG_PRICE_CHANGE    @map("catalog_price_change")
+  PRICING_RULE_CHANGE     @map("pricing_rule_change")
+}
+
+enum ApprovalStatus {
+  PENDING   @map("pending")
+  APPROVED  @map("approved")
+  REJECTED  @map("rejected")
+  CANCELLED @map("cancelled")
 }
 
 model User {
@@ -85,12 +133,22 @@ model User {
   role         UserRole  @default(VENTAS)
   active       Boolean   @default(true)
   lastLoginAt  DateTime? @map("last_login_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  quotesCreated Quote[]    @relation("QuoteCreatedBy")
-  servicesCreated Service[] @relation("ServiceCreatedBy")
-  auditLogs     AuditLog[] @relation("AuditActor")
+  canApproveDiscountsOver10     Boolean @default(false) @map("can_approve_discounts_over_10")
+  canApprovePriceChanges        Boolean @default(false) @map("can_approve_price_changes")
+  canApproveManualPricedItems   Boolean @default(false) @map("can_approve_manual_priced_items")
+  canApproveCatalogPriceChanges Boolean @default(false) @map("can_approve_catalog_price_changes")
+  canViewAuditLogs              Boolean @default(false) @map("can_view_audit_logs")
+  canExportAuditLogs            Boolean @default(false) @map("can_export_audit_logs")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  quotesCreated           Quote[]           @relation("QuoteCreatedBy")
+  servicesCreated         Service[]         @relation("ServiceCreatedBy")
+  auditLogs               AuditLog[]        @relation("AuditActor")
+  approvalRequestsCreated ApprovalRequest[] @relation("ApprovalRequestedBy")
+  approvalRequestsResolved ApprovalRequest[] @relation("ApprovalResolvedBy")
 
   @@index([role])
   @@index([active])
@@ -130,7 +188,7 @@ model Service {
   createdAt           DateTime        @default(now()) @map("created_at")
   updatedAt           DateTime        @updatedAt @map("updated_at")
 
-  createdBy User?       @relation("ServiceCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdBy  User?       @relation("ServiceCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   quoteItems QuoteItem[]
 
   @@index([category])
@@ -177,12 +235,12 @@ model Quote {
 
   // Reglas comerciales congeladas: una cotización enviada/aceptada debe conservar los
   // porcentajes usados aunque el catálogo o las reglas cambien después.
-  rulesSnapshot       Json             @map("rules_snapshot")
+  rulesSnapshot Json @map("rules_snapshot")
 
-  validUntil          DateTime         @map("valid_until")
-  targetDeliveryDate  DateTime?        @map("target_delivery_date")
-  clientNotes         String?          @map("client_notes")
-  internalNotes       String?          @map("internal_notes")
+  validUntil         DateTime  @map("valid_until")
+  targetDeliveryDate DateTime? @map("target_delivery_date")
+  clientNotes        String?   @map("client_notes")
+  internalNotes      String?   @map("internal_notes")
 
   oneTimeSubtotal         Decimal @default(0) @map("one_time_subtotal") @db.Decimal(12, 2)
   monthlySubtotal         Decimal @default(0) @map("monthly_subtotal") @db.Decimal(12, 2)
@@ -200,20 +258,21 @@ model Quote {
   effectiveHourlyRate     Decimal @default(0) @map("effective_hourly_rate") @db.Decimal(12, 2)
 
   // Las revisiones evitan editar una cotización bloqueada. Ejemplo: PW-000015-R2.
-  revisionOfId       String?  @map("revision_of_id")
-  revisionNumber     Int?     @map("revision_number")
-  lockedAt           DateTime? @map("locked_at")
-  archivedAt         DateTime? @map("archived_at")
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
+  revisionOfId  String?   @map("revision_of_id")
+  revisionNumber Int?     @map("revision_number")
+  lockedAt      DateTime? @map("locked_at")
+  archivedAt    DateTime? @map("archived_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
-  client         Client          @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  createdBy      User?           @relation("QuoteCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  pricingRuleSet PricingRuleSet? @relation(fields: [pricingRuleSetId], references: [id], onDelete: SetNull)
-  revisionOf     Quote?          @relation("QuoteRevisions", fields: [revisionOfId], references: [id], onDelete: Restrict)
-  revisions      Quote[]         @relation("QuoteRevisions")
-  items          QuoteItem[]
-  auditLogs      AuditLog[]
+  client           Client            @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  createdBy        User?             @relation("QuoteCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  pricingRuleSet   PricingRuleSet?   @relation(fields: [pricingRuleSetId], references: [id], onDelete: SetNull)
+  revisionOf       Quote?            @relation("QuoteRevisions", fields: [revisionOfId], references: [id], onDelete: Restrict)
+  revisions        Quote[]           @relation("QuoteRevisions")
+  items            QuoteItem[]
+  auditLogs        AuditLog[]
+  approvalRequests ApprovalRequest[]
 
   @@index([status])
   @@index([mode])
@@ -241,12 +300,46 @@ model QuoteItem {
   createdAt        DateTime        @default(now()) @map("created_at")
   updatedAt        DateTime        @updatedAt @map("updated_at")
 
-  quote   Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  service Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  quote            Quote             @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  service          Service?          @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  approvalRequests ApprovalRequest[]
 
   @@index([quoteId])
   @@index([serviceId])
   @@map("quote_items")
+}
+
+model ApprovalRequest {
+  id                String         @id @default(cuid())
+  quoteId           String?        @map("quote_id")
+  quoteItemId       String?        @map("quote_item_id")
+  requestedByUserId String         @map("requested_by_user_id")
+  resolvedByUserId  String?        @map("resolved_by_user_id")
+  type              ApprovalType
+  status            ApprovalStatus @default(PENDING)
+  reason            String?
+  resolutionNotes   String?        @map("resolution_notes")
+  before            Json?
+  after             Json?
+  metadata          Json?
+  requestedAt       DateTime       @default(now()) @map("requested_at")
+  resolvedAt        DateTime?      @map("resolved_at")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  quote       Quote?     @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  quoteItem   QuoteItem? @relation(fields: [quoteItemId], references: [id], onDelete: SetNull)
+  requestedBy User      @relation("ApprovalRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  resolvedBy  User?     @relation("ApprovalResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([quoteId])
+  @@index([quoteItemId])
+  @@index([requestedByUserId])
+  @@index([resolvedByUserId])
+  @@index([type])
+  @@index([status])
+  @@index([requestedAt])
+  @@map("approval_requests")
 }
 
 model AuditLog {
