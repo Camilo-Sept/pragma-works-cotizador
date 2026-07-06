@@ -189,6 +189,11 @@ function mapRulesSnapshot(value: Prisma.JsonValue): PricingRules {
     commissionPercent: numberValue("commissionPercent"),
     discountPercent: numberValue("discountPercent"),
     aiEfficiencyPercent: numberValue("aiEfficiencyPercent"),
+    deliveryMarginMultiplier: numberValue("deliveryMarginMultiplier"),
+    developerCount: numberValue("developerCount"),
+    hoursPerDeveloperDay: numberValue("hoursPerDeveloperDay"),
+    deliveryAvailabilityPercent: numberValue("deliveryAvailabilityPercent"),
+    deliveryBacklogHours: numberValue("deliveryBacklogHours"),
     sourceDeliveryPercent: numberValue("sourceDeliveryPercent"),
     sourceBuyoutPercent: numberValue("sourceBuyoutPercent"),
     rentalInitialPercent: numberValue("rentalInitialPercent"),
@@ -213,6 +218,7 @@ function mapQuoteFromDatabase(quote: DatabaseQuote): SavedQuote {
     estimatedHours: Number(item.estimatedHours),
     source: appServiceSourceMap[item.source],
     requiresApproval: item.requiresApproval,
+    visibleToClient: item.visibleToClient,
     notes: item.notes ?? undefined,
   }));
 
@@ -440,6 +446,7 @@ export async function POST(request: Request) {
             estimatedHours: decimal(item.estimatedHours),
             source: serviceSourceMap[item.source] ?? ServiceSource.MANUAL,
             requiresApproval: item.requiresApproval,
+            visibleToClient: item.visibleToClient ?? true,
             notes: item.notes?.trim() || null,
           })),
         });

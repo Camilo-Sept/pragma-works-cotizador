@@ -303,6 +303,7 @@ model QuoteItem {
   estimatedHours   Decimal         @default(0) @map("estimated_hours") @db.Decimal(10, 2)
   source           ServiceSource
   requiresApproval Boolean         @default(false) @map("requires_approval")
+  visibleToClient  Boolean         @default(true) @map("visible_to_client")
   notes            String?
   createdAt        DateTime        @default(now()) @map("created_at")
   updatedAt        DateTime        @updatedAt @map("updated_at")

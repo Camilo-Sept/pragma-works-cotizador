@@ -31,6 +31,7 @@ export type ServiceItem = {
   active: boolean;
   source: "catalog" | "manual";
   requiresApproval: boolean;
+  visibleToClient?: boolean;
 };
 
 export type QuoteItem = {
@@ -44,6 +45,7 @@ export type QuoteItem = {
   estimatedHours: number;
   source: "catalog" | "manual";
   requiresApproval: boolean;
+  visibleToClient?: boolean;
   notes?: string;
 };
 
@@ -63,6 +65,11 @@ export type PricingRules = {
   commissionPercent: number;
   discountPercent: number;
   aiEfficiencyPercent?: number;
+  deliveryMarginMultiplier?: number;
+  developerCount?: number;
+  hoursPerDeveloperDay?: number;
+  deliveryAvailabilityPercent?: number;
+  deliveryBacklogHours?: number;
   sourceDeliveryPercent: number;
   sourceBuyoutPercent: number;
   rentalInitialPercent: number;

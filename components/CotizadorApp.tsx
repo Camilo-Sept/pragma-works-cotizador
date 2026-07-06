@@ -145,6 +145,7 @@ const defaultManualService = (name = ""): Omit<ServiceItem, "id" | "active" | "s
   basePrice: 0,
   estimatedHours: 1,
   requiresApproval: true,
+  visibleToClient: true,
 });
 
 
@@ -160,6 +161,19 @@ const defaultCatalogService = (): ServiceItem => ({
   active: true,
   source: "catalog",
   requiresApproval: false,
+  visibleToClient: true,
+});
+
+const defaultInternalCostDraft = (): Omit<ServiceItem, "id" | "active" | "source"> => ({
+  name: "",
+  category: "infrastructure",
+  descriptionClient: "Costo interno no visible en propuesta comercial.",
+  descriptionInternal: "",
+  billingType: "one_time",
+  basePrice: 0,
+  estimatedHours: 0,
+  requiresApproval: true,
+  visibleToClient: false,
 });
 
 function makeId(prefix: string) {
@@ -178,6 +192,7 @@ function serviceToQuoteItem(service: ServiceItem): QuoteItem {
     estimatedHours: service.estimatedHours,
     source: service.source,
     requiresApproval: service.requiresApproval,
+    visibleToClient: service.visibleToClient ?? true,
     notes: service.descriptionInternal,
   };
 }
@@ -258,6 +273,72 @@ function isPastDateInputValue(value?: string) {
   return value.slice(0, 10) < getTodayInputValue();
 }
 
+function toDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function isBusinessDay(date: Date) {
+  const day = date.getDay();
+  return day !== 0 && day !== 6;
+}
+
+function addBusinessDays(start: Date, days: number) {
+  const date = new Date(start);
+  let remaining = Math.max(0, Math.ceil(days));
+
+  while (remaining > 0) {
+    date.setDate(date.getDate() + 1);
+    if (isBusinessDay(date)) remaining -= 1;
+  }
+
+  return toDateInputValue(date);
+}
+
+function countBusinessDaysBetween(fromValue: string, toValue: string) {
+  const from = new Date(`${fromValue.slice(0, 10)}T00:00:00`);
+  const to = new Date(`${toValue.slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return 0;
+
+  const direction = to.getTime() >= from.getTime() ? 1 : -1;
+  const cursor = new Date(from);
+  let days = 0;
+
+  while (cursor.toDateString() !== to.toDateString()) {
+    cursor.setDate(cursor.getDate() + direction);
+    if (isBusinessDay(cursor)) days += direction;
+  }
+
+  return days;
+}
+
+function getAutoUrgencyPercent(compressedBusinessDays: number) {
+  if (compressedBusinessDays <= 0) return 0;
+  if (compressedBusinessDays <= 2) return 10;
+  if (compressedBusinessDays <= 5) return 15;
+  if (compressedBusinessDays <= 9) return 25;
+  return 35;
+}
+
+function calculateDeliveryPlan(estimatedHours: number, targetDeliveryDate: string | undefined, rules: PricingRules) {
+  const marginMultiplier = Math.max(1, rules.deliveryMarginMultiplier ?? 2);
+  const developerCount = Math.max(1, rules.developerCount ?? 2);
+  const hoursPerDeveloperDay = Math.max(1, rules.hoursPerDeveloperDay ?? 5);
+  const availabilityPercent = Math.max(10, Math.min(100, rules.deliveryAvailabilityPercent ?? 70));
+  const backlogHours = Math.max(0, rules.deliveryBacklogHours ?? 0);
+  const plannedHours = estimatedHours * marginMultiplier;
+  const dailyCapacity = developerCount * hoursPerDeveloperDay * (availabilityPercent / 100);
+  const requiredBusinessDays = plannedHours + backlogHours > 0 ? Math.max(1, Math.ceil((plannedHours + backlogHours) / dailyCapacity)) : 0;
+  const suggestedDeliveryDate = addBusinessDays(getStartOfToday(), requiredBusinessDays);
+  const businessDayDelta = targetDeliveryDate ? countBusinessDaysBetween(suggestedDeliveryDate, targetDeliveryDate) : null;
+  const compressedBusinessDays = businessDayDelta !== null && businessDayDelta < 0 ? Math.abs(businessDayDelta) : 0;
+  const autoUrgencyPercent = getAutoUrgencyPercent(compressedBusinessDays);
+
+  return { marginMultiplier, developerCount, hoursPerDeveloperDay, availabilityPercent, backlogHours, plannedHours, dailyCapacity, requiredBusinessDays, suggestedDeliveryDate, businessDayDelta, compressedBusinessDays, autoUrgencyPercent };
+}
+
 function openDatePicker(inputId: string) {
   const input = document.getElementById(inputId);
   if (!(input instanceof HTMLInputElement)) return;
@@ -334,6 +415,7 @@ export function CotizadorApp() {
   const [catalogCategory, setCatalogCategory] = useState<ServiceCategory | "all">("all");
   const [catalogStatus, setCatalogStatus] = useState<"active" | "inactive" | "all">("active");
   const [manualDraft, setManualDraft] = useState(defaultManualService());
+  const [internalCostDraft, setInternalCostDraft] = useState(defaultInternalCostDraft());
   const [saveManualToCatalog, setSaveManualToCatalog] = useState(true);
   const [copied, setCopied] = useState(false);
   const [savedQuotes, setSavedQuotes] = useState<SavedQuote[]>([]);
@@ -546,14 +628,33 @@ export function CotizadorApp() {
     (service) => service.name.trim().toLowerCase() === normalizedQuery,
   );
 
-  const totals = useMemo(
-    () => calculateQuoteTotals(items, mode, sourceCodeOption, rules),
-    [items, mode, sourceCodeOption, rules],
+  const estimatedWorkHours = useMemo(
+    () => items.reduce((sum, item) => sum + item.estimatedHours * item.quantity, 0),
+    [items],
   );
 
+  const deliveryPlan = useMemo(
+    () => calculateDeliveryPlan(estimatedWorkHours, client.targetDeliveryDate, rules),
+    [client.targetDeliveryDate, estimatedWorkHours, rules],
+  );
+
+  const effectiveRules = useMemo<PricingRules>(
+    () => ({ ...rules, urgencyPercent: Math.max(rules.urgencyPercent, deliveryPlan.autoUrgencyPercent) }),
+    [deliveryPlan.autoUrgencyPercent, rules],
+  );
+
+  const totals = useMemo(
+    () => calculateQuoteTotals(items, mode, sourceCodeOption, effectiveRules),
+    [items, mode, sourceCodeOption, effectiveRules],
+  );
+
+  const visibleQuoteItems = useMemo(() => items.filter((item) => item.visibleToClient !== false), [items]);
+  const internalQuoteItems = useMemo(() => items.filter((item) => item.visibleToClient === false), [items]);
+  const internalCostSubtotal = useMemo(() => internalQuoteItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0), [internalQuoteItems]);
+
   const whatsappSummary = useMemo(
-    () => buildWhatsAppSummary({ client, items, mode, sourceCodeOption, totals }),
-    [client, items, mode, sourceCodeOption, totals],
+    () => buildWhatsAppSummary({ client, items: visibleQuoteItems, mode, sourceCodeOption, totals }),
+    [client, visibleQuoteItems, mode, sourceCodeOption, totals],
   );
 
   const currentQuote = useMemo(
@@ -1004,6 +1105,41 @@ export function CotizadorApp() {
     setSaveManualToCatalog(true);
   }
 
+  function addInternalCost() {
+    if (!canEditCurrentQuote) {
+      showSavedMessage(currentQuoteLocked ? "Cotización bloqueada. Crea una revisión para agregar costos internos." : "Tu rol no permite editar cotizaciones.");
+      return;
+    }
+
+    if (!internalCostDraft.name.trim()) {
+      showSavedMessage("El costo interno necesita nombre.");
+      return;
+    }
+
+    if (internalCostDraft.basePrice <= 0) {
+      showSavedMessage("El costo interno necesita importe mayor a cero.");
+      return;
+    }
+
+    const item: QuoteItem = {
+      id: makeId("internal-item"),
+      name: internalCostDraft.name.trim(),
+      category: internalCostDraft.category,
+      billingType: internalCostDraft.billingType,
+      unitPrice: Math.max(0, internalCostDraft.basePrice),
+      quantity: 1,
+      estimatedHours: Math.max(0, internalCostDraft.estimatedHours),
+      source: "manual",
+      requiresApproval: true,
+      visibleToClient: false,
+      notes: internalCostDraft.descriptionInternal?.trim() || "Costo interno agregado a la cotización.",
+    };
+
+    setItems((current) => [...current, item]);
+    setInternalCostDraft(defaultInternalCostDraft());
+    showSavedMessage("Costo interno agregado. Sí suma al precio, pero no se lista al cliente.");
+  }
+
   function updateItem(id: string, patch: Partial<QuoteItem>) {
     if (!canEditCurrentQuote) {
       showSavedMessage(currentQuoteLocked ? "Cotización bloqueada. Crea una revisión para editar conceptos." : "Tu rol no permite editar cotizaciones.");
@@ -1033,7 +1169,7 @@ export function CotizadorApp() {
       client,
       mode,
       sourceCodeOption: mode === "rental" ? "none" : sourceCodeOption,
-      rules,
+      rules: effectiveRules,
       items,
       totals,
       createdAt: existing?.createdAt ?? now,
@@ -1102,7 +1238,7 @@ export function CotizadorApp() {
     setClient(quote.client);
     setMode(quote.mode);
     setSourceCodeOption(quote.sourceCodeOption);
-    setRules(quote.rules);
+    setRules({ ...defaultPricingRules, ...quote.rules });
     setItems(quote.items);
     setQuoteStatus(quote.status);
     setCurrentQuoteId(quote.id);
@@ -1707,7 +1843,68 @@ export function CotizadorApp() {
 
               <div className="notice info" style={{ marginTop: 14 }}>
                 Modalidad actual: <strong>{formatQuoteMode(mode)}</strong>. {mode === "rental" ? "En renta no se entrega código fuente." : "El código fuente puede cobrarse aparte si el cliente lo solicita."}
+                <br />
+                {mode === "one_time" && "Venta única: el desarrollo se cobra como pago inicial; sólo habrá mensualidad si agregas servicios mensuales."}
+                {mode === "rental" && " Renta mensual: pago inicial menor, mensualidad recurrente y sin entrega de código fuente."}
+                {mode === "hybrid" && " Híbrido: parte se cobra al inicio y parte se recupera como mensualidad."}
               </div>
+            </section>
+
+            <section className="card">
+              <div className="card-title">
+                <div>
+                  <h2>Reglas comerciales de esta cotización</h2>
+                  <p>Captura descuentos y ajustes internos antes de enviar. La urgencia se calcula sola si la fecha solicitada se adelanta.</p>
+                </div>
+                {canEditPricingRules && (
+                  <button
+                    className="btn success"
+                    type="button"
+                    onClick={async () => {
+                      const response = await fetch("/api/pricing-rules/default", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(rules),
+                      });
+                      const data = (await response.json().catch(() => null)) as { ok?: boolean; error?: string; rules?: PricingRules } | null;
+                      if (!response.ok || !data?.ok) {
+                        showSavedMessage(data?.error ?? "No se pudieron guardar las reglas default.");
+                        return;
+                      }
+                      if (data.rules) setRules({ ...defaultPricingRules, ...data.rules });
+                      showSavedMessage("Reglas default actualizadas para nuevas cotizaciones.");
+                    }}
+                  >
+                    Guardar como default admin
+                  </button>
+                )}
+              </div>
+              <div className="form-grid">
+                <div className="field"><label>Riesgo (%)</label><input disabled={!canEditCurrentQuote} type="number" min="0" value={rules.riskPercent} onChange={(event) => setRules({ ...rules, riskPercent: safeNumber(event.target.value) })} /></div>
+                <div className="field"><label>Comisión (%)</label><input disabled={!canEditCurrentQuote} type="number" min="0" value={rules.commissionPercent} onChange={(event) => setRules({ ...rules, commissionPercent: safeNumber(event.target.value) })} /></div>
+                <div className="field"><label>Descuento (%)</label><input disabled={!canEditCurrentQuote} type="number" min="0" value={rules.discountPercent} onChange={(event) => setRules({ ...rules, discountPercent: safeNumber(event.target.value) })} /></div>
+                <div className="field"><label>Urgencia manual mínima (%)</label><input disabled={!canEditCurrentQuote} type="number" min="0" value={rules.urgencyPercent} onChange={(event) => setRules({ ...rules, urgencyPercent: safeNumber(event.target.value) })} /></div>
+              </div>
+              {rules.discountPercent > 10 && <div className="notice warning" style={{ marginTop: 14 }}>Descuento mayor a 10%. Este movimiento deberá solicitar autorización cuando conectemos el semáforo.</div>}
+            </section>
+
+            <section className="card">
+              <div className="card-title"><div><h2>Planeación interna de entrega</h2><p>Fecha sugerida con margen x2, capacidad real del equipo y carga previa.</p></div></div>
+              <div className="form-grid">
+                <div className="field"><label>Margen de error</label><input disabled={!canEditCurrentQuote} type="number" min="1" step="0.5" value={rules.deliveryMarginMultiplier ?? 2} onChange={(event) => setRules({ ...rules, deliveryMarginMultiplier: Math.max(1, safeNumber(event.target.value, 2)) })} /></div>
+                <div className="field"><label>Desarrolladores disponibles</label><input disabled={!canEditCurrentQuote} type="number" min="1" value={rules.developerCount ?? 2} onChange={(event) => setRules({ ...rules, developerCount: Math.max(1, safeNumber(event.target.value, 2)) })} /></div>
+                <div className="field"><label>Horas reales/día/dev</label><input disabled={!canEditCurrentQuote} type="number" min="1" value={rules.hoursPerDeveloperDay ?? 5} onChange={(event) => setRules({ ...rules, hoursPerDeveloperDay: Math.max(1, safeNumber(event.target.value, 5)) })} /></div>
+                <div className="field"><label>Disponibilidad real (%)</label><input disabled={!canEditCurrentQuote} type="number" min="10" max="100" value={rules.deliveryAvailabilityPercent ?? 70} onChange={(event) => setRules({ ...rules, deliveryAvailabilityPercent: Math.max(10, Math.min(100, safeNumber(event.target.value, 70))) })} /></div>
+                <div className="field"><label>Horas en cola/proyectos activos</label><input disabled={!canEditCurrentQuote} type="number" min="0" value={rules.deliveryBacklogHours ?? 0} onChange={(event) => setRules({ ...rules, deliveryBacklogHours: Math.max(0, safeNumber(event.target.value)) })} /></div>
+                <div className="field"><label>Fecha sugerida</label><input disabled value={deliveryPlan.suggestedDeliveryDate} /></div>
+              </div>
+              <div className="notice info" style={{ marginTop: 14 }}>
+                Horas estimadas: <strong>{estimatedWorkHours} h</strong> · Horas planeadas: <strong>{deliveryPlan.plannedHours.toFixed(1)} h</strong> · Capacidad real: <strong>{deliveryPlan.dailyCapacity.toFixed(1)} h/día</strong> · Días hábiles requeridos: <strong>{deliveryPlan.requiredBusinessDays}</strong>.
+                <br />
+                Urgencia automática: <strong>{deliveryPlan.autoUrgencyPercent}%</strong>. Urgencia aplicada: <strong>{effectiveRules.urgencyPercent}%</strong>.
+              </div>
+              {deliveryPlan.compressedBusinessDays > 0 && <div className="notice warning" style={{ marginTop: 14 }}>La fecha solicitada adelanta {deliveryPlan.compressedBusinessDays} día(s) hábil(es) contra la fecha sugerida. Se aplica cargo de urgencia.</div>}
+              <div style={{ marginTop: 14 }}><button className="btn ghost" type="button" disabled={!canEditCurrentQuote} onClick={() => setClient({ ...client, targetDeliveryDate: deliveryPlan.suggestedDeliveryDate })}>Usar fecha sugerida</button></div>
             </section>
 
             <section className="card">
@@ -1813,16 +2010,99 @@ export function CotizadorApp() {
             <section className="card">
               <div className="card-title">
                 <div>
-                  <h2>Conceptos agregados</h2>
-                  <p>Estos conceptos se usan para calcular el pago inicial, mensualidad y renovación.</p>
+                  <h2>Costos internos / gastos ocultos</h2>
+                  <p>Captura hosting, dominio, servidor, hostname, APIs, licencias o herramientas. Suman al precio, pero no se listan al cliente.</p>
                 </div>
               </div>
 
-              {items.length === 0 ? (
-                <div className="notice">Todavía no hay conceptos agregados. Busca un servicio o crea uno nuevo desde el buscador.</div>
+              <div className="form-grid">
+                <div className="field">
+                  <label>Concepto interno</label>
+                  <input disabled={!canEditCurrentQuote} value={internalCostDraft.name} onChange={(event) => setInternalCostDraft({ ...internalCostDraft, name: event.target.value })} placeholder="Ej. Hosting, servidor, dominio, API, licencia" />
+                </div>
+                <div className="field">
+                  <label>Categoría</label>
+                  <select disabled={!canEditCurrentQuote} value={internalCostDraft.category} onChange={(event) => setInternalCostDraft({ ...internalCostDraft, category: event.target.value as ServiceCategory })}>
+                    {Object.entries(categoryLabels).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Tipo de costo</label>
+                  <select disabled={!canEditCurrentQuote} value={internalCostDraft.billingType} onChange={(event) => setInternalCostDraft({ ...internalCostDraft, billingType: event.target.value as BillingType })}>
+                    <option value="one_time">Único</option>
+                    <option value="monthly">Mensual</option>
+                    <option value="annual">Anual</option>
+                    <option value="hourly">Por hora</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Importe interno</label>
+                  <input disabled={!canEditCurrentQuote} type="number" min="0" value={internalCostDraft.basePrice} onChange={(event) => setInternalCostDraft({ ...internalCostDraft, basePrice: safeNumber(event.target.value) })} />
+                </div>
+                <div className="field">
+                  <label>Horas internas</label>
+                  <input disabled={!canEditCurrentQuote} type="number" min="0" value={internalCostDraft.estimatedHours} onChange={(event) => setInternalCostDraft({ ...internalCostDraft, estimatedHours: safeNumber(event.target.value) })} />
+                </div>
+                <div className="field full">
+                  <label>Nota interna</label>
+                  <textarea disabled={!canEditCurrentQuote} value={internalCostDraft.descriptionInternal ?? ""} onChange={(event) => setInternalCostDraft({ ...internalCostDraft, descriptionInternal: event.target.value })} placeholder="Proveedor, razón del costo, renovación, observaciones..." />
+                </div>
+              </div>
+
+              <div className="split-actions" style={{ marginTop: 14 }}>
+                <button className="btn success" disabled={!canEditCurrentQuote || !internalCostDraft.name.trim() || internalCostDraft.basePrice <= 0} onClick={addInternalCost}>Agregar costo interno</button>
+                <button className="btn ghost" disabled={!canEditCurrentQuote} onClick={() => setInternalCostDraft(defaultInternalCostDraft())}>Limpiar</button>
+              </div>
+
+              <div className="notice info" style={{ marginTop: 14 }}>
+                Total interno oculto: <strong>{formatCurrency(internalCostSubtotal)}</strong>. Estos conceptos no aparecen en el PDF ni en WhatsApp, pero sí protegen margen.
+              </div>
+
+              {internalQuoteItems.length > 0 && (
+                <div className="table-like" style={{ marginTop: 14 }}>
+                  {internalQuoteItems.map((item) => (
+                    <article className="quote-row" key={item.id}>
+                      <div>
+                        <h4>{item.name}</h4>
+                        <p>{categoryLabels[item.category]} · {formatBillingType(item.billingType)} · Interno/no visible</p>
+                      </div>
+                      <div className="item-controls">
+                        <div className="field">
+                          <label>Cant.</label>
+                          <input disabled={!canEditCurrentQuote} className="small-input" type="number" min="1" value={item.quantity} onChange={(event) => updateItem(item.id, { quantity: Math.max(1, safeNumber(event.target.value, 1)) })} />
+                        </div>
+                        <div className="field">
+                          <label>Importe</label>
+                          <input disabled={!canEditCurrentQuote} className="small-input" type="number" min="0" value={item.unitPrice} onChange={(event) => updateItem(item.id, { unitPrice: safeNumber(event.target.value) })} />
+                        </div>
+                        <div className="field">
+                          <label>Horas</label>
+                          <input disabled={!canEditCurrentQuote} className="small-input" type="number" min="0" value={item.estimatedHours} onChange={(event) => updateItem(item.id, { estimatedHours: safeNumber(event.target.value) })} />
+                        </div>
+                        <button className="btn ghost" disabled={!canEditCurrentQuote} onClick={() => updateItem(item.id, { visibleToClient: true })}>Pasar a cliente</button>
+                        <button className="btn danger" disabled={!canEditCurrentQuote} onClick={() => removeItem(item.id)}>Quitar</button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="card">
+              <div className="card-title">
+                <div>
+                  <h2>Conceptos visibles al cliente</h2>
+                  <p>Estos conceptos sí aparecen en PDF / WhatsApp. Los gastos internos se administran en su propio panel.</p>
+                </div>
+              </div>
+
+              {visibleQuoteItems.length === 0 ? (
+                <div className="notice">Todavía no hay conceptos visibles al cliente. Busca un servicio o crea uno nuevo desde el buscador.</div>
               ) : (
                 <div className="table-like">
-                  {items.map((item) => (
+                  {visibleQuoteItems.map((item) => (
                     <article className="quote-row" key={item.id}>
                       <div>
                         <h4>{item.name}</h4>
@@ -1840,6 +2120,7 @@ export function CotizadorApp() {
                           <label>Precio</label>
                           <input disabled={!canEditCurrentQuote} className="small-input" type="number" min="0" value={item.unitPrice} onChange={(event) => updateItem(item.id, { unitPrice: safeNumber(event.target.value) })} />
                         </div>
+                        <button className="btn ghost" disabled={!canEditCurrentQuote} onClick={() => updateItem(item.id, { visibleToClient: false })}>Pasar a interno</button>
                         <button className="btn danger" disabled={!canEditCurrentQuote} onClick={() => removeItem(item.id)}>Quitar</button>
                       </div>
                     </article>
@@ -1894,6 +2175,13 @@ export function CotizadorApp() {
                     <p>Referencia interna para validar que no se esté regalando trabajo.</p>
                   </div>
                   <strong>{totals.estimatedHours} h</strong>
+                </div>
+                <div className="service-row">
+                  <div>
+                    <h4>Costos internos/no visibles</h4>
+                    <p>Infraestructura, hosting, servidor, APIs o licencias incluidas sin listarlas al cliente.</p>
+                  </div>
+                  <strong>{formatCurrency(internalCostSubtotal)}</strong>
                 </div>
               </div>
             </section>
@@ -2369,8 +2657,8 @@ export function CotizadorApp() {
 
             <section className="print-section">
               <h2>Servicios incluidos</h2>
-              {items.length === 0 ? (
-                <p className="print-empty">No hay conceptos agregados todavía.</p>
+              {visibleQuoteItems.length === 0 ? (
+                <p className="print-empty">No hay conceptos visibles para cliente todavía.</p>
               ) : (
                 <table className="print-table">
                   <thead>
