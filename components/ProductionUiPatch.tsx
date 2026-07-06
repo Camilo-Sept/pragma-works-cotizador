@@ -10,21 +10,37 @@ type SessionResponse = {
   } | null;
 };
 
-function patchSecurityTab(role: UserRole | null) {
+function findTab(label: string) {
   const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>(".tabs .tab-button"));
-  const securityButton = buttons.find((button) => button.textContent?.trim() === "Seguridad / roles");
+  return buttons.find((button) => button.textContent?.trim() === label) ?? null;
+}
 
+function hideRulesTab() {
+  const rulesButton = findTab("Reglas de precio");
+  if (!rulesButton) return;
+
+  const wasActive = rulesButton.classList.contains("active");
+  rulesButton.style.display = "none";
+
+  if (wasActive) {
+    const quoteButton = findTab("Nueva cotización");
+    quoteButton?.click();
+  }
+}
+
+function patchUsersTab(role: UserRole | null) {
+  const securityButton = findTab("Seguridad / roles") ?? findTab("Usuarios");
   if (!securityButton) return;
 
-  if (role !== "admin") {
-    securityButton.style.display = "none";
+  if (role === "admin") {
+    securityButton.style.display = "";
+    securityButton.textContent = "Usuarios";
+    securityButton.setAttribute("aria-label", "Administrar usuarios");
+    securityButton.dataset.productionUsersTab = "true";
     return;
   }
 
-  securityButton.style.display = "";
-  securityButton.textContent = "Usuarios";
-  securityButton.setAttribute("aria-label", "Administrar usuarios");
-  securityButton.dataset.productionUsersTab = "true";
+  securityButton.style.display = "none";
 }
 
 export function ProductionUiPatch() {
@@ -34,7 +50,8 @@ export function ProductionUiPatch() {
 
     function applyPatch() {
       if (cancelled) return;
-      patchSecurityTab(role);
+      hideRulesTab();
+      patchUsersTab(role);
     }
 
     async function loadRole() {
@@ -44,10 +61,10 @@ export function ProductionUiPatch() {
 
         if (!cancelled && response.ok && data.ok && data.user?.role) {
           role = data.user.role.toLowerCase() as UserRole;
-          applyPatch();
         }
       } catch {
         role = null;
+      } finally {
         applyPatch();
       }
     }
