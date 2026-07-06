@@ -25,6 +25,14 @@ type AuditLog = {
   createdAt: string;
 };
 
+type Pagination = {
+  total: number;
+  skip: number;
+  take: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+};
+
 const PAGE_SIZE = 20;
 
 const roleLabels: Record<UserRole, string> = {
@@ -73,6 +81,8 @@ const actionLabels: Record<string, string> = {
   approval_cancelled: "Autorización cancelada",
 };
 
+const actionOptions = Object.keys(actionLabels);
+
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("es-MX", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
@@ -95,47 +105,25 @@ function safeJson(value: unknown) {
 export function AuditLogPage() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [pagination, setPagination] = useState<Pagination>({ total: 0, skip: 0, take: PAGE_SIZE, hasNextPage: false, hasPreviousPage: false });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
+  const [appliedAction, setAppliedAction] = useState("all");
   const [pageIndex, setPageIndex] = useState(0);
 
-  const filteredLogs = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase();
+  const totalPages = Math.max(1, Math.ceil(pagination.total / PAGE_SIZE));
 
-    return logs.filter((log) => {
-      const matchesAction = actionFilter === "all" || log.action === actionFilter;
-      if (!matchesAction) return false;
-      if (!normalizedSearch) return true;
+  const pageLabel = useMemo(() => {
+    if (pagination.total === 0) return "Sin resultados";
+    const first = pagination.skip + 1;
+    const last = Math.min(pagination.skip + pagination.take, pagination.total);
+    return `Mostrando ${first}-${last} de ${pagination.total}`;
+  }, [pagination.skip, pagination.take, pagination.total]);
 
-      return [
-        log.action,
-        getActionLabel(log.action),
-        log.entityType,
-        log.entityId ?? "",
-        log.actor?.name ?? "",
-        log.actor?.email ?? "",
-        log.quote?.folio ?? "",
-        log.quote?.clientName ?? "",
-        log.quote?.projectName ?? "",
-      ].join(" ").toLowerCase().includes(normalizedSearch);
-    });
-  }, [actionFilter, logs, search]);
-
-  const actions = useMemo(() => Array.from(new Set(logs.map((log) => log.action))).sort(), [logs]);
-  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / PAGE_SIZE));
-  const pagedLogs = useMemo(() => {
-    const start = pageIndex * PAGE_SIZE;
-    return filteredLogs.slice(start, start + PAGE_SIZE);
-  }, [filteredLogs, pageIndex]);
-
-  function goToPage(nextPage: number) {
-    setPageIndex(Math.max(0, Math.min(totalPages - 1, nextPage)));
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  async function loadLogs() {
+  async function loadLogs(nextPage = pageIndex, nextSearch = appliedSearch, nextAction = appliedAction) {
     setLoading(true);
     setError("");
 
@@ -151,8 +139,16 @@ export function AuditLogPage() {
 
       setCurrentUser({ ...meData.user, role: meData.user.role.toLowerCase() as UserRole });
 
-      const logsResponse = await fetch("/api/audit-logs?take=100", { cache: "no-store" });
-      const logsData = (await logsResponse.json()) as { ok?: boolean; logs?: AuditLog[]; error?: string };
+      const params = new URLSearchParams({
+        take: String(PAGE_SIZE),
+        skip: String(nextPage * PAGE_SIZE),
+      });
+
+      if (nextSearch.trim()) params.set("q", nextSearch.trim());
+      if (nextAction !== "all") params.set("action", nextAction);
+
+      const logsResponse = await fetch(`/api/audit-logs?${params.toString()}`, { cache: "no-store" });
+      const logsData = (await logsResponse.json()) as { ok?: boolean; logs?: AuditLog[]; pagination?: Pagination; error?: string };
 
       if (!logsResponse.ok || !logsData.ok || !Array.isArray(logsData.logs)) {
         setError(logsData.error ?? "No se pudo cargar la bitácora.");
@@ -160,7 +156,8 @@ export function AuditLogPage() {
       }
 
       setLogs(logsData.logs);
-      setPageIndex(0);
+      setPagination(logsData.pagination ?? { total: logsData.logs.length, skip: nextPage * PAGE_SIZE, take: PAGE_SIZE, hasNextPage: false, hasPreviousPage: nextPage > 0 });
+      setPageIndex(nextPage);
     } catch (loadError) {
       console.error("No se pudo cargar bitácora.", loadError);
       setError("No se pudo conectar con el servidor.");
@@ -170,8 +167,29 @@ export function AuditLogPage() {
   }
 
   useEffect(() => {
-    void loadLogs();
+    void loadLogs(0, "", "all");
   }, []);
+
+  function applyFilters() {
+    const nextSearch = search.trim();
+    setAppliedSearch(nextSearch);
+    setAppliedAction(actionFilter);
+    void loadLogs(0, nextSearch, actionFilter);
+  }
+
+  function clearFilters() {
+    setSearch("");
+    setAppliedSearch("");
+    setActionFilter("all");
+    setAppliedAction("all");
+    void loadLogs(0, "", "all");
+  }
+
+  function goToPage(nextPage: number) {
+    const safePage = Math.max(0, Math.min(totalPages - 1, nextPage));
+    void loadLogs(safePage);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   return (
     <main className="app-shell">
@@ -191,7 +209,7 @@ export function AuditLogPage() {
         </div>
       </header>
 
-      {loading ? (
+      {loading && logs.length === 0 ? (
         <section className="card">
           <h2>Cargando bitácora...</h2>
           <p>Validando sesión y permisos.</p>
@@ -213,37 +231,28 @@ export function AuditLogPage() {
             <div className="card-title">
               <div>
                 <h2>Movimientos recientes</h2>
-                <p>{filteredLogs.length} movimientos encontrados. Mostrando máximo {PAGE_SIZE} por página.</p>
+                <p>{pageLabel}. El backend sólo envía {PAGE_SIZE} movimientos por página.</p>
               </div>
-              <button className="btn ghost" type="button" onClick={() => void loadLogs()}>Recargar</button>
+              <button className="btn ghost" disabled={loading} type="button" onClick={() => void loadLogs(pageIndex)}>Recargar</button>
             </div>
 
             <div className="form-grid">
               <div className="field">
                 <label>Buscar</label>
-                <input
-                  value={search}
-                  onChange={(event) => {
-                    setSearch(event.target.value);
-                    setPageIndex(0);
-                  }}
-                  placeholder="Usuario, acción, folio, correo o entidad"
-                />
+                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Usuario, acción, folio, correo o entidad" />
               </div>
               <div className="field">
                 <label>Acción</label>
-                <select
-                  value={actionFilter}
-                  onChange={(event) => {
-                    setActionFilter(event.target.value);
-                    setPageIndex(0);
-                  }}
-                >
+                <select value={actionFilter} onChange={(event) => setActionFilter(event.target.value)}>
                   <option value="all">Todas</option>
-                  {actions.map((action) => (
+                  {actionOptions.map((action) => (
                     <option key={action} value={action}>{getActionLabel(action)}</option>
                   ))}
                 </select>
+              </div>
+              <div className="split-actions full">
+                <button className="btn primary" disabled={loading} type="button" onClick={applyFilters}>Aplicar filtros</button>
+                <button className="btn ghost" disabled={loading} type="button" onClick={clearFilters}>Limpiar</button>
               </div>
             </div>
           </section>
@@ -252,16 +261,16 @@ export function AuditLogPage() {
             <div className="card-title">
               <div>
                 <h2>Página {pageIndex + 1} de {totalPages}</h2>
-                <p>Se renderizan 20 movimientos por página para que la vista no se alente.</p>
+                <p>{loading ? "Actualizando movimientos..." : pageLabel}</p>
               </div>
               <div className="split-actions">
-                <button className="btn ghost" type="button" disabled={pageIndex <= 0} onClick={() => goToPage(pageIndex - 1)}>Anterior</button>
-                <button className="btn ghost" type="button" disabled={pageIndex >= totalPages - 1} onClick={() => goToPage(pageIndex + 1)}>Siguiente</button>
+                <button className="btn ghost" type="button" disabled={loading || !pagination.hasPreviousPage} onClick={() => goToPage(pageIndex - 1)}>Anterior</button>
+                <button className="btn ghost" type="button" disabled={loading || !pagination.hasNextPage} onClick={() => goToPage(pageIndex + 1)}>Siguiente</button>
               </div>
             </div>
 
             <div className="table-like">
-              {pagedLogs.length === 0 ? (
+              {logs.length === 0 ? (
                 <article className="history-row">
                   <div>
                     <h4>Sin resultados</h4>
@@ -269,7 +278,7 @@ export function AuditLogPage() {
                   </div>
                 </article>
               ) : (
-                pagedLogs.map((log) => (
+                logs.map((log) => (
                   <article className="history-row audit-row" key={log.id}>
                     <div>
                       <div className="history-heading">
