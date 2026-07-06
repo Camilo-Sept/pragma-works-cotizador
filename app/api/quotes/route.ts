@@ -10,6 +10,7 @@ import {
   SourceCodeOption,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { forbiddenResponse, hasRole, requireAuth, requireRole } from "@/lib/serverAuth";
 import type {
   BillingType as AppBillingType,
   PricingRules,
@@ -22,6 +23,9 @@ import type {
 } from "@/types/quote";
 
 export const dynamic = "force-dynamic";
+
+const quoteSaveRoles = ["admin", "supervisor", "ventas"] as const;
+const quoteDecisionRoles = ["admin", "supervisor"] as const;
 
 const quoteStatusMap = {
   draft: QuoteStatus.DRAFT,
@@ -257,6 +261,12 @@ function mapQuoteFromDatabase(quote: DatabaseQuote): SavedQuote {
 
 export async function GET() {
   try {
+    const auth = await requireAuth();
+
+    if (!auth.ok) {
+      return auth.response;
+    }
+
     const quotes = await prisma.quote.findMany({
       ...quoteSelect(),
       orderBy: { updatedAt: "desc" },
@@ -276,6 +286,12 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireRole([...quoteSaveRoles]);
+
+    if (!auth.ok) {
+      return auth.response;
+    }
+
     const quote = validateQuotePayload(await request.json().catch(() => null));
 
     if (!quote) {
@@ -283,6 +299,10 @@ export async function POST(request: Request) {
         { ok: false, error: "La cotización no contiene los datos mínimos para guardarse." },
         { status: 400 },
       );
+    }
+
+    if ((quote.status === "accepted" || quote.status === "rejected") && !hasRole(auth.user, [...quoteDecisionRoles])) {
+      return forbiddenResponse("Sólo admin o supervisor pueden guardar cotizaciones aceptadas o rechazadas.");
     }
 
     const savedQuote = await prisma.$transaction(async (tx) => {
@@ -372,10 +392,16 @@ export async function POST(request: Request) {
       const persistedQuote = existingQuote
         ? await tx.quote.update({
             where: { id: existingQuote.id },
-            data: quoteData,
+            data: {
+              ...quoteData,
+              createdByUserId: existingQuote.createdByUserId,
+            },
           })
         : await tx.quote.create({
-            data: quoteData,
+            data: {
+              ...quoteData,
+              createdByUserId: auth.user.id,
+            },
           });
 
       await tx.quoteItem.deleteMany({
@@ -414,6 +440,7 @@ export async function POST(request: Request) {
       await tx.auditLog.create({
         data: {
           quoteId: persistedQuote.id,
+          actorUserId: auth.user.id,
           action: existingQuote ? AuditAction.UPDATE : AuditAction.CREATE,
           entityType: "quote",
           entityId: persistedQuote.id,
@@ -421,7 +448,7 @@ export async function POST(request: Request) {
             folio: quote.folio,
             status: quote.status,
             itemCount: quote.items.length,
-            syncedFrom: "localStorage",
+            syncedFrom: "web_app",
           },
         },
       });

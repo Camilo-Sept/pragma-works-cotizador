@@ -6,6 +6,8 @@ const SESSION_DURATION_SECONDS = 60 * 60 * 8;
 const HASH_ITERATIONS = 120_000;
 const HASH_KEY_LENGTH = 32;
 const HASH_DIGEST = "sha256";
+const DEV_AUTH_SECRET = "pragma-works-dev-secret-change-me";
+const MIN_PRODUCTION_SECRET_LENGTH = 32;
 
 export type AuthUser = {
   id: string;
@@ -27,7 +29,24 @@ export function getSessionMaxAge() {
 }
 
 function getAuthSecret() {
-  return process.env.AUTH_SECRET || "pragma-works-dev-secret-change-me";
+  const secret = process.env.AUTH_SECRET?.trim();
+
+  if (process.env.NODE_ENV === "production") {
+    if (!secret) {
+      throw new Error("AUTH_SECRET is required in production.");
+    }
+
+    if (
+      secret.length < MIN_PRODUCTION_SECRET_LENGTH ||
+      secret === DEV_AUTH_SECRET ||
+      secret.includes("replace") ||
+      secret.includes("change-me")
+    ) {
+      throw new Error("AUTH_SECRET must be a strong unique secret in production.");
+    }
+  }
+
+  return secret || DEV_AUTH_SECRET;
 }
 
 function base64UrlEncode(value: string) {

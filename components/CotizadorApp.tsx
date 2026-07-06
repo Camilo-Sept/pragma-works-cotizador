@@ -349,7 +349,7 @@ export function CotizadorApp() {
   const [reportToDate, setReportToDate] = useState("");
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [loginEmail, setLoginEmail] = useState("admin@pragmaworks.mx");
+  const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
 
@@ -1453,7 +1453,7 @@ export function CotizadorApp() {
                 inputMode="email"
                 value={loginEmail}
                 onChange={(event) => setLoginEmail(event.target.value)}
-                placeholder="admin@pragmaworks.mx"
+                placeholder="correo@empresa.com"
               />
             </div>
             <div className="field">
@@ -1468,7 +1468,7 @@ export function CotizadorApp() {
             </div>
             {loginError && <div className="form-alert danger">{loginError}</div>}
             <button className="btn primary" type="submit">Entrar</button>
-            <p className="login-help">Demo admin: admin@pragmaworks.mx / Pragma2026!</p>
+            <p className="login-help">Solicita tus credenciales al administrador del sistema.</p>
           </form>
         </section>
       </main>
