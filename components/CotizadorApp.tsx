@@ -100,8 +100,8 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
   lectura: [],
 };
 
-const tabsByRole: Record<UserRole, Array<"quote" | "history" | "reports" | "preview" | "catalog" | "rules" | "security" | "github" | "users">> = {
-  admin: ["quote", "history", "reports", "preview", "catalog", "users"],
+const tabsByRole: Record<UserRole, Array<"quote" | "history" | "reports" | "preview" | "catalog" | "users" | "audit">> = {
+  admin: ["quote", "history", "reports", "preview", "catalog", "users", "audit"],
   supervisor: ["quote", "history", "reports", "preview"],
   ventas: ["quote", "history", "reports", "preview"],
   operacion: ["history", "reports"],
@@ -314,7 +314,7 @@ function mergeSavedQuotes(localQuotes: SavedQuote[], databaseQuotes: SavedQuote[
 }
 
 export function CotizadorApp() {
-  const [activeTab, setActiveTab] = useState<"quote" | "history" | "reports" | "preview" | "catalog" | "rules" | "security" | "github" | "users">("quote");
+  const [activeTab, setActiveTab] = useState<"quote" | "history" | "reports" | "preview" | "catalog" | "users" | "audit">("quote");
   const [currentRole, setCurrentRole] = useState<UserRole>("admin");
   const [baseCatalogServices, setBaseCatalogServices] = useState<ServiceItem[]>(initialServices);
   const [catalogSource, setCatalogSource] = useState<"database" | "fallback">("fallback");
@@ -1540,6 +1540,11 @@ export function CotizadorApp() {
             Usuarios
           </button>
         )}
+        {availableTabs.includes("audit") && (
+          <button className="tab-button" onClick={() => window.location.assign("/audit")}>
+            Bitácora
+          </button>
+        )}
       </nav>
 
       {activeTab === "quote" && (
@@ -2411,85 +2416,6 @@ export function CotizadorApp() {
       )}
 
 
-      {activeTab === "security" && (
-        <section className="grid">
-          <section className="card">
-            <div className="card-title">
-              <div>
-                <h2>Reglas de seguridad y permisos</h2>
-                <p>Preparación para el login real. Por ahora sólo simula vistas y candados en la UI local.</p>
-              </div>
-            </div>
-            <div className="notice warning">
-              Esto no sustituye seguridad real. El backend debe validar permisos otra vez, usar sesiones seguras, rate limit, WAF/CDN, consultas parametrizadas y auditoría. La UI sólo ayuda a no equivocarse en el flujo.
-            </div>
-          </section>
-
-          <section className="card">
-            <div className="card-title">
-              <div>
-                <h2>Rol actual</h2>
-                <p>{roleLabels[currentRole]} · {roleDescriptions[currentRole]}</p>
-              </div>
-            </div>
-            <div className="permission-grid">
-              {(Object.keys(roleLabels) as UserRole[]).map((role) => (
-                <article className={`permission-card ${currentRole === role ? "active" : ""}`} key={role}>
-                  <div className="history-heading">
-                    <h4>{roleLabels[role]}</h4>
-                    {currentRole === role && <span className="status-badge accepted">Actual</span>}
-                  </div>
-                  <p>{roleDescriptions[role]}</p>
-                  <div className="permission-list">
-                    {rolePermissions[role].length === 0 ? (
-                      <span>Consulta limitada sin edición.</span>
-                    ) : (
-                      rolePermissions[role].map((permission) => <span key={permission}>{permission.replaceAll("_", " ")}</span>)
-                    )}
-                  </div>
-                </article>
-              ))}
-            </div>
-          </section>
-
-          <section className="grid two">
-            <section className="card">
-              <div className="card-title">
-                <div>
-                  <h2>Reglas aplicadas desde este sprint</h2>
-                  <p>Candados locales para evitar errores comerciales.</p>
-                </div>
-              </div>
-              <ul className="rules-list">
-                <li>Las cotizaciones enviadas, aceptadas o rechazadas quedan bloqueadas.</li>
-                <li>Para cambiar una cotización bloqueada se crea revisión R2/R3.</li>
-                <li>No se eliminan cotizaciones enviadas o aceptadas; se archivan.</li>
-                <li>VENTAS no puede aceptar/rechazar desde historial; eso queda para ADMIN/SUPERVISOR.</li>
-                <li>OPERACIÓN y LECTURA no modifican precios, catálogo ni cotizaciones.</li>
-                <li>El PDF de cliente sigue separado de datos internos.</li>
-              </ul>
-            </section>
-
-            <section className="card">
-              <div className="card-title">
-                <div>
-                  <h2>Pendiente para seguridad real</h2>
-                  <p>Esto se programa cuando entremos a backend.</p>
-                </div>
-              </div>
-              <ul className="rules-list">
-                <li>Login real con usuarios, hash de contraseña y sesiones seguras.</li>
-                <li>Validación de permisos en servidor, no sólo en la pantalla.</li>
-                <li>Base de datos con auditoría de cambios.</li>
-                <li>Protección anti SQL Injection con ORM/consultas parametrizadas.</li>
-                <li>Rate limit, WAF/CDN y límites de payload contra abuso/DDoS.</li>
-                <li>Backups, variables .env y secretos fuera de GitHub.</li>
-              </ul>
-            </section>
-          </section>
-        </section>
-      )}
-
       {activeTab === "catalog" && (
         <section className="grid two">
           <section className="card catalog-editor-card">
@@ -2656,98 +2582,6 @@ export function CotizadorApp() {
                   );
                 })
               )}
-            </div>
-          </section>
-        </section>
-      )}
-
-      {activeTab === "rules" && (
-        <section className="grid two">
-          <section className="card">
-            <div className="card-title">
-              <div>
-                <h2>Reglas de precio</h2>
-                <p>Estos porcentajes son locales en la V1. Más adelante irán en base de datos.</p>
-              </div>
-            </div>
-            <div className="form-grid">
-              {(
-                [
-                  ["riskPercent", "Riesgo técnico %"],
-                  ["urgencyPercent", "Urgencia %"],
-                  ["commissionPercent", "Comisión vendedor %"],
-                  ["discountPercent", "Descuento %"],
-                  ["sourceDeliveryPercent", "Código fuente al liquidar %"],
-                  ["sourceBuyoutPercent", "Compra total código %"],
-                  ["rentalInitialPercent", "Renta: pago inicial %"],
-                  ["rentalMonthlyPercent", "Renta: mensual del desarrollo %"],
-                  ["hybridInitialPercent", "Híbrido: pago inicial %"],
-                  ["hybridMonthlyPercent", "Híbrido: mensual del desarrollo %"],
-                  ["minimumOneTimePrice", "Mínimo pago único $"],
-                  ["minimumMonthlyPrice", "Mínimo mensual $"],
-                  ["websiteAnnualRenewal", "Renovación anual web $"],
-                ] as const
-              ).map(([key, label]) => (
-                <div className="field" key={key}>
-                  <label>{label}</label>
-                  <input
-                    type="number"
-                    value={rules[key]}
-                    onChange={(event) => setRules({ ...rules, [key]: safeNumber(event.target.value) })}
-                  />
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="card">
-            <div className="card-title">
-              <div>
-                <h2>Condiciones comerciales base</h2>
-                <p>Recordatorio para no prometer cosas fuera de alcance.</p>
-              </div>
-            </div>
-            <div className="grid">
-              <div className="notice info">
-                Página web fija desde {formatCurrency(10000)}. Incluye 1 año de servicio básico y 3 mantenimientos simples. No incluye rediseño, base de datos, login, tienda, campañas, APIs o cambios mayores.
-              </div>
-              <div className="notice">
-                Los precios no incluyen IVA salvo que se indique lo contrario. Hosting, dominio, correos, WhatsApp Business, IA, licencias o servicios externos pueden generar costos adicionales.
-              </div>
-              <div className="notice">
-                La cotización y sus precios son confidenciales. No deben compartirse con terceros, proveedores, competidores o personas ajenas al proyecto.
-              </div>
-            </div>
-          </section>
-        </section>
-      )}
-
-      {activeTab === "github" && (
-        <section className="grid two">
-          <section className="card">
-            <div className="card-title">
-              <div>
-                <h2>GitHub</h2>
-                <p>Comandos sugeridos para cerrar el Sprint 1.4.</p>
-              </div>
-            </div>
-            <pre className="preview">{`git status
-git add .
-git commit -m "feat: agregar reportes locales"
-git push -u origin sprint-1-4-reportes-locales`}</pre>
-          </section>
-          <section className="card">
-            <div className="card-title">
-              <div>
-                <h2>Siguiente sprint</h2>
-                <p>No meter base de datos hasta validar el catálogo editable y el flujo comercial.</p>
-              </div>
-            </div>
-            <div className="grid">
-              <div className="service-row"><div><h4>Sprint 1.4</h4><p>Reportes simples desde cotizaciones guardadas, filtros y exportación CSV.</p></div></div>
-              <div className="service-row"><div><h4>Sprint 1.5</h4><p>Plantillas comerciales y texto editable para condiciones de venta.</p></div></div>
-              <div className="service-row"><div><h4>Sprint 2</h4><p>Agregar login, base de datos y catálogo administrable en servidor.</p></div></div>
-              <div className="service-row"><div><h4>Sprint 3</h4><p>Docker, PostgreSQL, deploy y PWA instalable.</p></div></div>
             </div>
           </section>
         </section>
