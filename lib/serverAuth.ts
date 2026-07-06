@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getSessionCookieName, verifySessionToken, type AuthUser } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import type { UserRole } from "@/types/quote";
 
 export type AuthGuardResult =
@@ -9,7 +10,29 @@ export type AuthGuardResult =
 
 export async function getAuthenticatedUser() {
   const cookieStore = await cookies();
-  return verifySessionToken(cookieStore.get(getSessionCookieName())?.value);
+  const sessionUser = verifySessionToken(cookieStore.get(getSessionCookieName())?.value);
+
+  if (!sessionUser) return null;
+
+  const user = await prisma.user.findUnique({
+    where: { id: sessionUser.id },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      active: true,
+    },
+  });
+
+  if (!user?.active) return null;
+
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role.toLowerCase() as AuthUser["role"],
+  } satisfies AuthUser;
 }
 
 export function unauthorizedResponse(message = "Sesión requerida.") {
