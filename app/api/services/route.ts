@@ -46,6 +46,7 @@ export async function GET() {
       active: service.active,
       source: mapServiceSource(service.source),
       requiresApproval: service.requiresApproval,
+      visibleToClient: service.visibleToClient,
     }));
 
     return NextResponse.json({ services: mappedServices });
