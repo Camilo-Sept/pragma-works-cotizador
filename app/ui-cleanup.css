@@ -1,6 +1,5 @@
 /* Sprint 2.8.3 - Limpieza visual de producción sin rediseñar */
 
-/* Header principal: ocultar indicadores técnicos/debug sin afectar la pantalla /users. */
 .app-shell > .topbar .pill-row:has(.pill:nth-child(6)) .pill:nth-child(-n + 4),
 .app-shell > .topbar .pill-row:has(.pill:nth-child(6)) .pill:nth-child(6) {
   display: none;
@@ -10,7 +9,11 @@
   justify-content: flex-end;
 }
 
-/* Checks de permisos en administración de usuarios, manteniendo el estilo de cards actual. */
+.tabs .tab-button:nth-child(6),
+.tabs .tab-button:nth-child(8) {
+  display: none !important;
+}
+
 .permission-card:has(input[type="checkbox"]) {
   display: flex;
   align-items: center;
@@ -50,7 +53,6 @@
   width: 100%;
 }
 
-/* Desktop/tablet: mantener cards, pero permitir que usuarios no se encimen. */
 .history-row:has(.compact-check) {
   align-items: start;
 }
@@ -59,7 +61,6 @@
   max-width: 100%;
 }
 
-/* Responsive sin cambiar look: mismas cards, sólo acomodo. */
 @media (max-width: 900px) {
   .history-actions:has(.compact-check) {
     width: 100%;
