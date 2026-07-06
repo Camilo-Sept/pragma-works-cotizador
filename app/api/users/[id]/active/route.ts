@@ -49,8 +49,9 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const { id } = await context.params;
     const payload = (await request.json().catch(() => null)) as { active?: unknown } | null;
+    const nextActive = payload?.active;
 
-    if (typeof payload?.active !== "boolean") {
+    if (typeof nextActive !== "boolean") {
       return NextResponse.json(
         { ok: false, error: "El campo active debe ser booleano." },
         { status: 400 },
@@ -69,14 +70,14 @@ export async function PATCH(request: Request, context: RouteContext) {
       );
     }
 
-    if (auth.user.id === id && payload.active === false) {
+    if (auth.user.id === id && nextActive === false) {
       return NextResponse.json(
         { ok: false, error: "No puedes desactivar tu propia cuenta." },
         { status: 400 },
       );
     }
 
-    if (existing.role === UserRole.ADMIN && existing.active && payload.active === false) {
+    if (existing.role === UserRole.ADMIN && existing.active && nextActive === false) {
       const activeAdminCount = await prisma.user.count({
         where: { role: UserRole.ADMIN, active: true },
       });
@@ -92,13 +93,13 @@ export async function PATCH(request: Request, context: RouteContext) {
     const updated = await prisma.$transaction(async (tx) => {
       const user = await tx.user.update({
         where: { id },
-        data: { active: payload.active },
+        data: { active: nextActive },
         select: userSelect,
       });
 
       await writeAuditLog(tx, {
         actorUserId: auth.user.id,
-        action: payload.active ? AuditAction.USER_ENABLE : AuditAction.USER_DISABLE,
+        action: nextActive ? AuditAction.USER_ENABLE : AuditAction.USER_DISABLE,
         entityType: "user",
         entityId: id,
         before: mapUser(existing),
