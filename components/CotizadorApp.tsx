@@ -100,8 +100,8 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
   lectura: [],
 };
 
-const tabsByRole: Record<UserRole, Array<"quote" | "history" | "reports" | "preview" | "catalog" | "users" | "audit">> = {
-  admin: ["quote", "history", "reports", "preview", "catalog", "users", "audit"],
+const tabsByRole: Record<UserRole, Array<"quote" | "history" | "reports" | "preview" | "catalog" | "users" | "audit" | "approvals">> = {
+  admin: ["quote", "history", "reports", "preview", "catalog", "users", "audit", "approvals"],
   supervisor: ["quote", "history", "reports", "preview"],
   ventas: ["quote", "history", "reports", "preview"],
   operacion: ["history", "reports"],
@@ -314,7 +314,7 @@ function mergeSavedQuotes(localQuotes: SavedQuote[], databaseQuotes: SavedQuote[
 }
 
 export function CotizadorApp() {
-  const [activeTab, setActiveTab] = useState<"quote" | "history" | "reports" | "preview" | "catalog" | "users" | "audit">("quote");
+  const [activeTab, setActiveTab] = useState<"quote" | "history" | "reports" | "preview" | "catalog" | "users" | "audit" | "approvals">("quote");
   const [currentRole, setCurrentRole] = useState<UserRole>("admin");
   const [baseCatalogServices, setBaseCatalogServices] = useState<ServiceItem[]>(initialServices);
   const [catalogSource, setCatalogSource] = useState<"database" | "fallback">("fallback");
@@ -1543,6 +1543,11 @@ export function CotizadorApp() {
         {availableTabs.includes("audit") && (
           <button className="tab-button" onClick={() => window.location.assign("/audit")}>
             Bitácora
+          </button>
+        )}
+        {availableTabs.includes("approvals") && (
+          <button className="tab-button" onClick={() => window.location.assign("/approvals")}>
+            Autorizaciones
           </button>
         )}
       </nav>
