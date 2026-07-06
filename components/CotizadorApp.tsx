@@ -100,14 +100,13 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
   lectura: [],
 };
 
-const tabsByRole: Record<UserRole, Array<"quote" | "history" | "reports" | "preview" | "catalog" | "rules" | "security" | "github">> = {
-  admin: ["quote", "history", "reports", "preview", "catalog", "rules", "security", "github"],
-  supervisor: ["quote", "history", "reports", "preview", "security"],
-  ventas: ["quote", "history", "reports", "preview", "security"],
-  operacion: ["history", "reports", "security"],
-  lectura: ["history", "reports", "security"],
+const tabsByRole: Record<UserRole, Array<"quote" | "history" | "reports" | "preview" | "catalog" | "rules" | "security" | "github" | "users">> = {
+  admin: ["quote", "history", "reports", "preview", "catalog", "users"],
+  supervisor: ["quote", "history", "reports", "preview"],
+  ventas: ["quote", "history", "reports", "preview"],
+  operacion: ["history", "reports"],
+  lectura: ["history", "reports"],
 };
-
 const categoryLabels: Record<ServiceCategory, string> = {
   web: "Web",
   system: "Sistema",
@@ -315,7 +314,7 @@ function mergeSavedQuotes(localQuotes: SavedQuote[], databaseQuotes: SavedQuote[
 }
 
 export function CotizadorApp() {
-  const [activeTab, setActiveTab] = useState<"quote" | "history" | "reports" | "preview" | "catalog" | "rules" | "security" | "github">("quote");
+  const [activeTab, setActiveTab] = useState<"quote" | "history" | "reports" | "preview" | "catalog" | "rules" | "security" | "github" | "users">("quote");
   const [currentRole, setCurrentRole] = useState<UserRole>("admin");
   const [baseCatalogServices, setBaseCatalogServices] = useState<ServiceItem[]>(initialServices);
   const [catalogSource, setCatalogSource] = useState<"database" | "fallback">("fallback");
@@ -1536,19 +1535,9 @@ export function CotizadorApp() {
             Catálogo local
           </button>
         )}
-        {availableTabs.includes("rules") && (
-          <button className={`tab-button ${activeTab === "rules" ? "active" : ""}`} onClick={() => setActiveTab("rules")}>
-            Reglas de precio
-          </button>
-        )}
-        {availableTabs.includes("security") && (
-          <button className={`tab-button ${activeTab === "security" ? "active" : ""}`} onClick={() => setActiveTab("security")}>
-            Seguridad / roles
-          </button>
-        )}
-        {availableTabs.includes("github") && (
-          <button className={`tab-button ${activeTab === "github" ? "active" : ""}`} onClick={() => setActiveTab("github")}>
-            GitHub / siguiente sprint
+        {availableTabs.includes("users") && (
+          <button className="tab-button" onClick={() => window.location.assign("/users")}>
+            Usuarios
           </button>
         )}
       </nav>
