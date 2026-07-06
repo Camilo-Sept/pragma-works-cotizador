@@ -30,6 +30,7 @@ export async function GET() {
       urgencyPercent: Number(ruleSet.urgencyPercent),
       commissionPercent: Number(ruleSet.commissionPercent),
       discountPercent: Number(ruleSet.discountPercent),
+      aiEfficiencyPercent: 20,
       sourceDeliveryPercent: Number(ruleSet.sourceDeliveryPercent),
       sourceBuyoutPercent: Number(ruleSet.sourceBuyoutPercent),
       rentalInitialPercent: Number(ruleSet.rentalInitialPercent),

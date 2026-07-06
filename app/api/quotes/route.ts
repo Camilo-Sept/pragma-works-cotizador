@@ -188,6 +188,7 @@ function mapRulesSnapshot(value: Prisma.JsonValue): PricingRules {
     urgencyPercent: numberValue("urgencyPercent"),
     commissionPercent: numberValue("commissionPercent"),
     discountPercent: numberValue("discountPercent"),
+    aiEfficiencyPercent: numberValue("aiEfficiencyPercent"),
     sourceDeliveryPercent: numberValue("sourceDeliveryPercent"),
     sourceBuyoutPercent: numberValue("sourceBuyoutPercent"),
     rentalInitialPercent: numberValue("rentalInitialPercent"),
@@ -241,6 +242,13 @@ function mapQuoteFromDatabase(quote: DatabaseQuote): SavedQuote {
       urgencyCharge: Number(quote.urgencyCharge),
       commissionCharge: Number(quote.commissionCharge),
       discountAmount: Number(quote.discountAmount),
+      aiEfficiencyAdjustment: 0,
+      marketOneTimePrice:
+        Number(quote.oneTimeSubtotal) +
+        Number(quote.riskCharge) +
+        Number(quote.urgencyCharge) +
+        Number(quote.commissionCharge) -
+        Number(quote.discountAmount),
       sourceCodeCharge: Number(quote.sourceCodeCharge),
       suggestedInitialPayment: Number(quote.suggestedInitialPayment),
       suggestedMonthlyPayment: Number(quote.suggestedMonthlyPayment),

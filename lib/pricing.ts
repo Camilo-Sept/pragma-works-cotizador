@@ -72,9 +72,16 @@ export function calculateQuoteTotals(
   const urgencyCharge = oneTimeSubtotal * (rules.urgencyPercent / 100);
   const commissionCharge = oneTimeSubtotal * (rules.commissionPercent / 100);
   const discountAmount = oneTimeSubtotal * (rules.discountPercent / 100);
+  const aiEfficiencyPercent = Math.max(0, Math.min(40, rules.aiEfficiencyPercent ?? 0));
+
+  const marketOneTimePrice = Math.max(
+    oneTimeSubtotal + riskCharge + urgencyCharge + commissionCharge - discountAmount,
+    oneTimeSubtotal > 0 ? rules.minimumOneTimePrice : 0,
+  );
+  const aiEfficiencyAdjustment = marketOneTimePrice * (aiEfficiencyPercent / 100);
 
   const adjustedOneTimeSubtotal = Math.max(
-    oneTimeSubtotal + riskCharge + urgencyCharge + commissionCharge - discountAmount,
+    marketOneTimePrice - aiEfficiencyAdjustment,
     oneTimeSubtotal > 0 ? rules.minimumOneTimePrice : 0,
   );
 
@@ -149,6 +156,8 @@ export function calculateQuoteTotals(
     urgencyCharge,
     commissionCharge,
     discountAmount,
+    aiEfficiencyAdjustment,
+    marketOneTimePrice,
     sourceCodeCharge,
     suggestedInitialPayment,
     suggestedMonthlyPayment,

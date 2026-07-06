@@ -62,6 +62,7 @@ export type PricingRules = {
   urgencyPercent: number;
   commissionPercent: number;
   discountPercent: number;
+  aiEfficiencyPercent?: number;
   sourceDeliveryPercent: number;
   sourceBuyoutPercent: number;
   rentalInitialPercent: number;
@@ -82,6 +83,8 @@ export type QuoteTotals = {
   urgencyCharge: number;
   commissionCharge: number;
   discountAmount: number;
+  aiEfficiencyAdjustment: number;
+  marketOneTimePrice: number;
   sourceCodeCharge: number;
   suggestedInitialPayment: number;
   suggestedMonthlyPayment: number;

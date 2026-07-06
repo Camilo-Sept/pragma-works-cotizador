@@ -1681,6 +1681,17 @@ export function CotizadorApp() {
                   </select>
                 </div>
                 <div className="field">
+                  <label>Eficiencia por desarrollo asistido (%)</label>
+                  <input
+                    disabled={!canEditCurrentQuote}
+                    type="number"
+                    min="0"
+                    max="40"
+                    value={rules.aiEfficiencyPercent ?? 0}
+                    onChange={(event) => setRules({ ...rules, aiEfficiencyPercent: Math.max(0, Math.min(40, safeNumber(event.target.value))) })}
+                  />
+                </div>
+                <div className="field">
                   <label>Código fuente</label>
                   <select
                     value={mode === "rental" ? "none" : sourceCodeOption}
@@ -1875,7 +1886,7 @@ export function CotizadorApp() {
                     <h4>Ajustes comerciales</h4>
                     <p>Riesgo, urgencia, comisión, descuento y código fuente.</p>
                   </div>
-                  <strong>{formatCurrency(totals.riskCharge + totals.urgencyCharge + totals.commissionCharge - totals.discountAmount + totals.sourceCodeCharge)}</strong>
+                  <strong>{formatCurrency(totals.riskCharge + totals.urgencyCharge + totals.commissionCharge - totals.discountAmount - totals.aiEfficiencyAdjustment + totals.sourceCodeCharge)}</strong>
                 </div>
                 <div className="service-row">
                   <div>

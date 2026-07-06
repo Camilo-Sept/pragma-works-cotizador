@@ -5,6 +5,7 @@ export const defaultPricingRules: PricingRules = {
   urgencyPercent: 0,
   commissionPercent: 5,
   discountPercent: 0,
+  aiEfficiencyPercent: 20,
   sourceDeliveryPercent: 25,
   sourceBuyoutPercent: 50,
   rentalInitialPercent: 30,
