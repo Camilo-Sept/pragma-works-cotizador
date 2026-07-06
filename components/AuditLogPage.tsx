@@ -4,27 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { companyProfile } from "@/data/company";
 import type { UserRole } from "@/types/quote";
 
-type CurrentUser = {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-};
-
-type AuditActor = {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-} | null;
-
-type AuditQuote = {
-  id: string;
-  folio: string;
-  projectName: string;
-  clientName: string;
-  status: string;
-} | null;
+type CurrentUser = { id: string; name: string; email: string; role: UserRole };
+type AuditActor = { id: string; name: string; email: string; role: UserRole } | null;
+type AuditQuote = { id: string; folio: string; projectName?: string; clientName?: string; status?: string } | null;
 
 type AuditLog = {
   id: string;
@@ -38,10 +20,12 @@ type AuditLog = {
   before: unknown;
   after: unknown;
   metadata: unknown;
-  ipAddress: string | null;
-  userAgent: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
   createdAt: string;
 };
+
+const PAGE_SIZE = 20;
 
 const roleLabels: Record<UserRole, string> = {
   admin: "ADMIN",
@@ -90,10 +74,7 @@ const actionLabels: Record<string, string> = {
 };
 
 function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("es-MX", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return new Intl.DateTimeFormat("es-MX", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
 function getActionLabel(action: string) {
@@ -118,6 +99,7 @@ export function AuditLogPage() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
+  const [pageIndex, setPageIndex] = useState(0);
 
   const filteredLogs = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
@@ -125,7 +107,6 @@ export function AuditLogPage() {
     return logs.filter((log) => {
       const matchesAction = actionFilter === "all" || log.action === actionFilter;
       if (!matchesAction) return false;
-
       if (!normalizedSearch) return true;
 
       return [
@@ -138,14 +119,21 @@ export function AuditLogPage() {
         log.quote?.folio ?? "",
         log.quote?.clientName ?? "",
         log.quote?.projectName ?? "",
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(normalizedSearch);
+      ].join(" ").toLowerCase().includes(normalizedSearch);
     });
   }, [actionFilter, logs, search]);
 
   const actions = useMemo(() => Array.from(new Set(logs.map((log) => log.action))).sort(), [logs]);
+  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / PAGE_SIZE));
+  const pagedLogs = useMemo(() => {
+    const start = pageIndex * PAGE_SIZE;
+    return filteredLogs.slice(start, start + PAGE_SIZE);
+  }, [filteredLogs, pageIndex]);
+
+  function goToPage(nextPage: number) {
+    setPageIndex(Math.max(0, Math.min(totalPages - 1, nextPage)));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   async function loadLogs() {
     setLoading(true);
@@ -172,6 +160,7 @@ export function AuditLogPage() {
       }
 
       setLogs(logsData.logs);
+      setPageIndex(0);
     } catch (loadError) {
       console.error("No se pudo cargar bitácora.", loadError);
       setError("No se pudo conectar con el servidor.");
@@ -224,7 +213,7 @@ export function AuditLogPage() {
             <div className="card-title">
               <div>
                 <h2>Movimientos recientes</h2>
-                <p>Últimos {logs.length} movimientos registrados en backend.</p>
+                <p>{filteredLogs.length} movimientos encontrados. Mostrando máximo {PAGE_SIZE} por página.</p>
               </div>
               <button className="btn ghost" type="button" onClick={() => void loadLogs()}>Recargar</button>
             </div>
@@ -232,11 +221,24 @@ export function AuditLogPage() {
             <div className="form-grid">
               <div className="field">
                 <label>Buscar</label>
-                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Usuario, acción, folio, correo o entidad" />
+                <input
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                    setPageIndex(0);
+                  }}
+                  placeholder="Usuario, acción, folio, correo o entidad"
+                />
               </div>
               <div className="field">
                 <label>Acción</label>
-                <select value={actionFilter} onChange={(event) => setActionFilter(event.target.value)}>
+                <select
+                  value={actionFilter}
+                  onChange={(event) => {
+                    setActionFilter(event.target.value);
+                    setPageIndex(0);
+                  }}
+                >
                   <option value="all">Todas</option>
                   {actions.map((action) => (
                     <option key={action} value={action}>{getActionLabel(action)}</option>
@@ -247,8 +249,19 @@ export function AuditLogPage() {
           </section>
 
           <section className="card">
+            <div className="card-title">
+              <div>
+                <h2>Página {pageIndex + 1} de {totalPages}</h2>
+                <p>Se renderizan 20 movimientos por página para que la vista no se alente.</p>
+              </div>
+              <div className="split-actions">
+                <button className="btn ghost" type="button" disabled={pageIndex <= 0} onClick={() => goToPage(pageIndex - 1)}>Anterior</button>
+                <button className="btn ghost" type="button" disabled={pageIndex >= totalPages - 1} onClick={() => goToPage(pageIndex + 1)}>Siguiente</button>
+              </div>
+            </div>
+
             <div className="table-like">
-              {filteredLogs.length === 0 ? (
+              {pagedLogs.length === 0 ? (
                 <article className="history-row">
                   <div>
                     <h4>Sin resultados</h4>
@@ -256,7 +269,7 @@ export function AuditLogPage() {
                   </div>
                 </article>
               ) : (
-                filteredLogs.map((log) => (
+                pagedLogs.map((log) => (
                   <article className="history-row audit-row" key={log.id}>
                     <div>
                       <div className="history-heading">
