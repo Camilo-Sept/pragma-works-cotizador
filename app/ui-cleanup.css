@@ -1,4 +1,4 @@
-/* Sprint 2.8.3 - Limpieza visual de producción sin rediseñar */
+/* Sprint 2.8.3 - Ajustes visuales */
 
 .app-shell > .topbar .pill-row:has(.pill:nth-child(6)) .pill:nth-child(-n + 4),
 .app-shell > .topbar .pill-row:has(.pill:nth-child(6)) .pill:nth-child(6) {
@@ -7,24 +7,6 @@
 
 .app-shell > .topbar .pill-row:has(.pill:nth-child(6)) {
   justify-content: flex-end;
-}
-
-.tabs .tab-button:nth-child(6),
-.tabs .tab-button:nth-child(8) {
-  display: none !important;
-}
-
-body[data-app-role="admin"] .tabs .tab-button:nth-child(7) {
-  font-size: 0;
-}
-
-body[data-app-role="admin"] .tabs .tab-button:nth-child(7)::after {
-  content: "Usuarios";
-  font-size: 0.9rem;
-}
-
-body:not([data-app-role="admin"]) .tabs .tab-button:nth-child(7) {
-  display: none !important;
 }
 
 .permission-card:has(input[type="checkbox"]) {
