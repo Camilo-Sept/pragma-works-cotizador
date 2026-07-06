@@ -325,6 +325,28 @@ const demoUsers = [
   },
 ];
 
+function isProductionSeed() {
+  return process.env.NODE_ENV === "production";
+}
+
+function getSeedUsers() {
+  if (!isProductionSeed()) return demoUsers;
+
+  const email = process.env.SEED_ADMIN_EMAIL?.trim();
+  const password = process.env.SEED_ADMIN_PASSWORD;
+
+  if (!email || !password) return [];
+
+  return [
+    {
+      name: process.env.SEED_ADMIN_NAME?.trim() || "Administrador",
+      email,
+      role: UserRole.ADMIN,
+      password,
+    },
+  ];
+}
+
 function decimal(value) {
   return new Prisma.Decimal(value);
 }
@@ -415,8 +437,9 @@ async function seedServices() {
 async function seedUsers() {
   let created = 0;
   let updated = 0;
+  const users = getSeedUsers();
 
-  for (const user of demoUsers) {
+  for (const user of users) {
     const existing = await prisma.user.findUnique({
       where: { email: user.email },
     });
@@ -446,21 +469,26 @@ async function seedUsers() {
     created += 1;
   }
 
-  return { created, updated };
+  return { created, updated, skipped: users.length === 0 };
 }
 
 async function main() {
-  console.log("🌱 Iniciando seed local de Pragma Works...");
+  console.log("🌱 Iniciando seed de Pragma Works...");
 
   const pricingRulesResult = await seedPricingRules();
   const servicesResult = await seedServices();
   const usersResult = await seedUsers();
+  const userLabel = isProductionSeed() ? "Admin seed" : "Usuarios demo";
 
   console.log(`✅ Reglas comerciales: ${pricingRulesResult}`);
   console.log(
     `✅ Servicios de catálogo: ${servicesResult.created} creados, ${servicesResult.updated} actualizados`,
   );
-  console.log(`✅ Usuarios demo: ${usersResult.created} creados, ${usersResult.updated} actualizados`);
+  if (usersResult.skipped) {
+    console.log("✅ Admin seed: omitido; faltan SEED_ADMIN_EMAIL o SEED_ADMIN_PASSWORD");
+  } else {
+    console.log(`✅ ${userLabel}: ${usersResult.created} creados, ${usersResult.updated} actualizados`);
+  }
   console.log("🌱 Seed terminado");
 }
 
