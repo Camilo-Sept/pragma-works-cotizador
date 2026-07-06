@@ -17,8 +17,14 @@ function parseDate(value: string | null) {
 
 function parseTake(value: string | null) {
   const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return 100;
-  return Math.max(1, Math.min(200, Math.trunc(parsed)));
+  if (!Number.isFinite(parsed)) return 20;
+  return Math.max(1, Math.min(50, Math.trunc(parsed)));
+}
+
+function parseSkip(value: string | null) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.trunc(parsed));
 }
 
 function mapLog(log: Prisma.AuditLogGetPayload<{ include: { actor: true; quote: true } }>) {
@@ -85,10 +91,11 @@ export async function GET(request: Request) {
     const quoteId = url.searchParams.get("quoteId")?.trim();
     const q = url.searchParams.get("q")?.trim();
     const actionText = url.searchParams.get("action")?.trim().toLowerCase();
-    const action = actionText ? actionMap[actionText] : undefined;
+    const action = actionText && actionText !== "all" ? actionMap[actionText] : undefined;
     const from = parseDate(url.searchParams.get("from"));
     const to = parseDate(url.searchParams.get("to"));
     const take = parseTake(url.searchParams.get("take"));
+    const skip = parseSkip(url.searchParams.get("skip"));
 
     const where: Prisma.AuditLogWhereInput = {};
 
@@ -114,17 +121,31 @@ export async function GET(request: Request) {
       ];
     }
 
-    const logs = await prisma.auditLog.findMany({
-      where,
-      include: {
-        actor: true,
-        quote: true,
-      },
-      orderBy: { createdAt: "desc" },
-      take,
-    });
+    const [total, logs] = await Promise.all([
+      prisma.auditLog.count({ where }),
+      prisma.auditLog.findMany({
+        where,
+        include: {
+          actor: true,
+          quote: true,
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take,
+      }),
+    ]);
 
-    return NextResponse.json({ ok: true, logs: logs.map(mapLog) });
+    return NextResponse.json({
+      ok: true,
+      logs: logs.map(mapLog),
+      pagination: {
+        total,
+        skip,
+        take,
+        hasNextPage: skip + take < total,
+        hasPreviousPage: skip > 0,
+      },
+    });
   } catch (error) {
     console.error("Error loading audit logs", error);
 
