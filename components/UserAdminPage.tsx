@@ -288,6 +288,7 @@ export function UserAdminPage() {
         </section>
         <div className="pill-row">
           <a className="pill" href="/">Volver al cotizador</a>
+          <a className="pill" href="/audit">Bitácora</a>
           {currentUser && <span className="pill">Sesión: {currentUser.name}</span>}
           {currentUser && <span className="pill">Rol: {roleLabels[currentUser.role]}</span>}
         </div>
