@@ -2,7 +2,7 @@
 
 Cotizador comercial para servicios de software, automatización, soporte e IA.
 
-La app ya incluye UI local, catálogo, reglas comerciales, historial local, reportes, vista/PDF desde navegador, roles simulados, PostgreSQL local con Docker, Prisma, seed inicial y sincronización de cotizaciones a BD con fallback local.
+La app ya incluye UI local, catálogo, reglas comerciales, historial local, reportes, vista/PDF desde navegador, PostgreSQL local con Docker, Prisma, seed inicial, sincronización de cotizaciones a BD con fallback local, login básico real, usuarios en base de datos, contraseña hasheada, cookie `httpOnly` y validación server-side en rutas API protegidas.
 
 ## Stack
 
@@ -14,7 +14,7 @@ La app ya incluye UI local, catálogo, reglas comerciales, historial local, repo
 - PostgreSQL
 - Docker Compose para desarrollo local
 - localStorage como guardado inmediato/fallback
-- API routes de Next.js para catálogo, reglas, cotizaciones y healthcheck
+- API routes de Next.js para catálogo, reglas, cotizaciones, autenticación y healthcheck
 
 ## Qué incluye esta V1
 
@@ -60,15 +60,21 @@ La app ya incluye UI local, catálogo, reglas comerciales, historial local, repo
 - Catálogo y reglas desde PostgreSQL con fallback local.
 - Guardado local de cotizaciones y sincronización posterior a PostgreSQL.
 - Endpoint `/api/health` para validar conexión con base de datos.
+- Login básico real con usuarios persistidos en base de datos.
+- Contraseñas almacenadas con hash PBKDF2.
+- Sesión por cookie `httpOnly` firmada.
+- APIs protegidas con validación server-side de sesión y rol.
+- Seed seguro para producción: no crea usuarios demo fijos en `NODE_ENV=production`.
 
 ## Qué NO incluye todavía
 
-- Autenticación real.
-- Roles de servidor.
+- Panel administrativo para alta, baja y edición de usuarios.
+- Recuperación/restablecimiento de contraseña.
+- Rate limit persistente avanzado para login.
 - PDF generado con librería dedicada.
 - PWA instalable.
 
-Los roles actuales son simulados en UI. El login real queda para un sprint posterior.
+Los permisos ya se validan en backend para rutas críticas, pero la administración completa de usuarios queda para un sprint posterior.
 
 ## Cómo correr localmente
 
@@ -158,6 +164,8 @@ git push -u origin main
 - No subir `.next`.
 - No subir `.env`.
 - No meter contraseñas ni secretos al repo.
+- No mostrar credenciales demo en la pantalla de login.
+- En producción, usar siempre un `AUTH_SECRET` único, fuerte y diferente al de desarrollo.
 - Hacer commits pequeños por funcionalidad.
 
 ## Próximos sprints sugeridos
@@ -199,29 +207,31 @@ Completado en rama de trabajo local:
 - Textos configurables para condiciones y alcance.
 - Preparar terreno para usuarios y permisos.
 
-### Sprint 2
+### Sprint 2.0 - Base de datos y deploy
 
-- Login.
-- Roles.
-- Base de datos.
-- Catálogo administrable en servidor.
+- Docker. ✅
+- PostgreSQL. ✅
+- Prisma. ✅
+- Deploy Vercel + Railway. ✅
+- Catálogo y reglas desde base de datos. ✅
+- Cotizaciones sincronizadas a base de datos. ✅
 
-### Sprint 3
+### Sprint 2.7 - Cierre de seguridad backend
 
-- Docker.
-- PostgreSQL.
-- Deploy.
+- Login básico real con usuarios de base de datos. ✅
+- Contraseñas hasheadas. ✅
+- Cookie `httpOnly` firmada. ✅
+- `AUTH_SECRET` obligatorio y fuerte en producción. ✅
+- APIs protegidas por sesión. ✅
+- Permisos reales en backend para guardar/aceptar/rechazar cotizaciones. ✅
+- Auditoría con usuario autenticado. ✅
+- Seed seguro para producción. ✅
+
+### Sprint 2.8 sugerido
+
+- Panel administrativo de usuarios.
+- Cambio y recuperación de contraseña.
+- Rate limit persistente con base de datos o Redis.
+- CRUD de catálogo y reglas en servidor.
+- PDF dedicado con librería.
 - PWA instalable.
-
-## Completado en Sprint 1.6
-
-- Simulación local de roles: ADMIN, SUPERVISOR, VENTAS, OPERACIÓN y LECTURA.
-- Pestañas visibles según rol.
-- Candados de negocio para cotizaciones enviadas, aceptadas y rechazadas.
-- Creación de revisiones R2/R3 para modificar cotizaciones bloqueadas.
-- Bloqueo de eliminación para cotizaciones enviadas o aceptadas; se archivan en lugar de borrar.
-- Bloqueo de edición de catálogo y reglas para roles sin permiso.
-- Nueva pestaña **Seguridad / roles** con matriz de permisos y reglas aplicadas.
-- Preparación conceptual para login real con backend.
-
-> Nota: estos permisos todavía son de interfaz local. La seguridad real debe validarse en backend con sesiones, roles, auditoría, rate limits y base de datos.
