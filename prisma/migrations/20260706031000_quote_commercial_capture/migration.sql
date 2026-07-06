@@ -1,2 +1,13 @@
 ALTER TABLE "quote_items"
 ADD COLUMN IF NOT EXISTS "visible_to_client" BOOLEAN NOT NULL DEFAULT true;
+
+ALTER TABLE "services"
+ADD COLUMN IF NOT EXISTS "visible_to_client" BOOLEAN NOT NULL DEFAULT true;
+
+ALTER TABLE "pricing_rule_sets"
+ADD COLUMN IF NOT EXISTS "ai_efficiency_percent" DECIMAL(7, 2) NOT NULL DEFAULT 20,
+ADD COLUMN IF NOT EXISTS "delivery_margin_multiplier" DECIMAL(7, 2) NOT NULL DEFAULT 2,
+ADD COLUMN IF NOT EXISTS "developer_count" DECIMAL(7, 2) NOT NULL DEFAULT 2,
+ADD COLUMN IF NOT EXISTS "hours_per_developer_day" DECIMAL(7, 2) NOT NULL DEFAULT 5,
+ADD COLUMN IF NOT EXISTS "delivery_availability_percent" DECIMAL(7, 2) NOT NULL DEFAULT 70,
+ADD COLUMN IF NOT EXISTS "delivery_backlog_hours" DECIMAL(10, 2) NOT NULL DEFAULT 0;
