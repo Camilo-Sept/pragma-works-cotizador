@@ -14,6 +14,19 @@
   display: none !important;
 }
 
+body[data-app-role="admin"] .tabs .tab-button:nth-child(7) {
+  font-size: 0;
+}
+
+body[data-app-role="admin"] .tabs .tab-button:nth-child(7)::after {
+  content: "Usuarios";
+  font-size: 0.9rem;
+}
+
+body:not([data-app-role="admin"]) .tabs .tab-button:nth-child(7) {
+  display: none !important;
+}
+
 .permission-card:has(input[type="checkbox"]) {
   display: flex;
   align-items: center;
