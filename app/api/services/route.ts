@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/serverAuth";
 import type { BillingType, ServiceCategory, ServiceItem } from "@/types/quote";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,12 @@ function mapServiceSource(value: string): "catalog" | "manual" {
 
 export async function GET() {
   try {
+    const auth = await requireAuth();
+
+    if (!auth.ok) {
+      return auth.response;
+    }
+
     const services = await prisma.service.findMany({
       orderBy: [
         { active: "desc" },
