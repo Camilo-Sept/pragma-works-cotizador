@@ -176,6 +176,141 @@ const defaultInternalCostDraft = (): Omit<ServiceItem, "id" | "active" | "source
   visibleToClient: false,
 });
 
+const internalCostCatalog: Array<Omit<ServiceItem, "active" | "source">> = [
+  {
+    id: "internal-hosting",
+    name: "Hosting",
+    category: "infrastructure",
+    descriptionClient: "Costo interno no visible en propuesta comercial.",
+    descriptionInternal: "Hospedaje administrado del proyecto.",
+    billingType: "monthly",
+    basePrice: 900,
+    estimatedHours: 0,
+    requiresApproval: true,
+    visibleToClient: false,
+  },
+  {
+    id: "internal-domain",
+    name: "Dominio",
+    category: "infrastructure",
+    descriptionClient: "Costo interno no visible en propuesta comercial.",
+    descriptionInternal: "Registro o renovación de dominio.",
+    billingType: "annual",
+    basePrice: 450,
+    estimatedHours: 0,
+    requiresApproval: true,
+    visibleToClient: false,
+  },
+  {
+    id: "internal-server",
+    name: "Servidor",
+    category: "infrastructure",
+    descriptionClient: "Costo interno no visible en propuesta comercial.",
+    descriptionInternal: "Servidor, VPS o instancia cloud.",
+    billingType: "monthly",
+    basePrice: 1200,
+    estimatedHours: 0,
+    requiresApproval: true,
+    visibleToClient: false,
+  },
+  {
+    id: "internal-whatsapp-api",
+    name: "API WhatsApp",
+    category: "automation",
+    descriptionClient: "Costo interno no visible en propuesta comercial.",
+    descriptionInternal: "Consumo, proveedor o integración de WhatsApp.",
+    billingType: "monthly",
+    basePrice: 1000,
+    estimatedHours: 1,
+    requiresApproval: true,
+    visibleToClient: false,
+  },
+  {
+    id: "internal-maps-api",
+    name: "Maps API",
+    category: "infrastructure",
+    descriptionClient: "Costo interno no visible en propuesta comercial.",
+    descriptionInternal: "Consumo de mapas, geocoding o lugares.",
+    billingType: "monthly",
+    basePrice: 1200,
+    estimatedHours: 0,
+    requiresApproval: true,
+    visibleToClient: false,
+  },
+  {
+    id: "internal-license",
+    name: "Licencia",
+    category: "infrastructure",
+    descriptionClient: "Costo interno no visible en propuesta comercial.",
+    descriptionInternal: "Licencia de software o herramienta externa.",
+    billingType: "monthly",
+    basePrice: 800,
+    estimatedHours: 0,
+    requiresApproval: true,
+    visibleToClient: false,
+  },
+  {
+    id: "internal-database",
+    name: "Base de datos",
+    category: "infrastructure",
+    descriptionClient: "Costo interno no visible en propuesta comercial.",
+    descriptionInternal: "Servicio administrado de base de datos.",
+    billingType: "monthly",
+    basePrice: 700,
+    estimatedHours: 0,
+    requiresApproval: true,
+    visibleToClient: false,
+  },
+  {
+    id: "internal-storage",
+    name: "Almacenamiento",
+    category: "infrastructure",
+    descriptionClient: "Costo interno no visible en propuesta comercial.",
+    descriptionInternal: "Storage de archivos, respaldos o media.",
+    billingType: "monthly",
+    basePrice: 350,
+    estimatedHours: 0,
+    requiresApproval: true,
+    visibleToClient: false,
+  },
+  {
+    id: "internal-email",
+    name: "Correo",
+    category: "infrastructure",
+    descriptionClient: "Costo interno no visible en propuesta comercial.",
+    descriptionInternal: "Cuentas de correo, SMTP o envio transaccional.",
+    billingType: "monthly",
+    basePrice: 300,
+    estimatedHours: 0,
+    requiresApproval: true,
+    visibleToClient: false,
+  },
+  {
+    id: "internal-ssl",
+    name: "SSL",
+    category: "infrastructure",
+    descriptionClient: "Costo interno no visible en propuesta comercial.",
+    descriptionInternal: "Certificado SSL o configuracion HTTPS.",
+    billingType: "annual",
+    basePrice: 0,
+    estimatedHours: 0,
+    requiresApproval: true,
+    visibleToClient: false,
+  },
+  {
+    id: "internal-support",
+    name: "Soporte",
+    category: "support",
+    descriptionClient: "Costo interno no visible en propuesta comercial.",
+    descriptionInternal: "Bolsa de soporte o acompanamiento interno.",
+    billingType: "hourly",
+    basePrice: 650,
+    estimatedHours: 1,
+    requiresApproval: true,
+    visibleToClient: false,
+  },
+];
+
 function makeId(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
 }
@@ -199,6 +334,31 @@ function serviceToQuoteItem(service: ServiceItem): QuoteItem {
 
 function cloneQuoteItems(items: QuoteItem[]): QuoteItem[] {
   return items.map((item) => ({ ...item, id: makeId("item") }));
+}
+
+function quoteItemFromInternalCost(
+  cost: Omit<ServiceItem, "id" | "active" | "source">,
+  quantity = 1,
+): QuoteItem {
+  return {
+    id: makeId("internal-item"),
+    name: cost.name.trim(),
+    category: cost.category,
+    billingType: cost.billingType,
+    unitPrice: Math.max(0, cost.basePrice),
+    quantity: Math.max(1, quantity),
+    estimatedHours: Math.max(0, cost.estimatedHours),
+    source: "manual",
+    requiresApproval: true,
+    visibleToClient: cost.visibleToClient ?? false,
+    notes: cost.descriptionInternal?.trim() || "Costo interno agregado a la cotizacion.",
+  };
+}
+
+function sumItemsByBillingType(items: QuoteItem[], billingTypes: BillingType[]) {
+  return items
+    .filter((item) => billingTypes.includes(item.billingType))
+    .reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
 }
 
 function safeNumber(value: string | number, fallback = 0) {
@@ -416,6 +576,8 @@ export function CotizadorApp() {
   const [catalogStatus, setCatalogStatus] = useState<"active" | "inactive" | "all">("active");
   const [manualDraft, setManualDraft] = useState(defaultManualService());
   const [internalCostDraft, setInternalCostDraft] = useState(defaultInternalCostDraft());
+  const [internalCostQuantity, setInternalCostQuantity] = useState(1);
+  const [internalCostSearch, setInternalCostSearch] = useState("");
   const [saveManualToCatalog, setSaveManualToCatalog] = useState(true);
   const [copied, setCopied] = useState(false);
   const [savedQuotes, setSavedQuotes] = useState<SavedQuote[]>([]);
@@ -650,7 +812,28 @@ export function CotizadorApp() {
 
   const visibleQuoteItems = useMemo(() => items.filter((item) => item.visibleToClient !== false), [items]);
   const internalQuoteItems = useMemo(() => items.filter((item) => item.visibleToClient === false), [items]);
-  const internalCostSubtotal = useMemo(() => internalQuoteItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0), [internalQuoteItems]);
+  const internalCostOneTimeSubtotal = useMemo(() => sumItemsByBillingType(internalQuoteItems, ["one_time", "hourly"]), [internalQuoteItems]);
+  const internalCostMonthlySubtotal = useMemo(() => sumItemsByBillingType(internalQuoteItems, ["monthly"]), [internalQuoteItems]);
+  const internalCostAnnualSubtotal = useMemo(() => sumItemsByBillingType(internalQuoteItems, ["annual"]), [internalQuoteItems]);
+  const internalCostSubtotal = internalCostOneTimeSubtotal + internalCostMonthlySubtotal + internalCostAnnualSubtotal;
+
+  const filteredInternalCostCatalog = useMemo(() => {
+    const search = internalCostSearch.trim().toLowerCase();
+
+    if (!search) return internalCostCatalog;
+
+    return internalCostCatalog.filter((cost) =>
+      [
+        cost.name,
+        cost.descriptionInternal ?? "",
+        categoryLabels[cost.category],
+        cost.billingType,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(search),
+    );
+  }, [internalCostSearch]);
 
   const whatsappSummary = useMemo(
     () => buildWhatsAppSummary({ client, items: visibleQuoteItems, mode, sourceCodeOption, totals }),
@@ -1116,28 +1299,27 @@ export function CotizadorApp() {
       return;
     }
 
-    if (internalCostDraft.basePrice <= 0) {
-      showSavedMessage("El costo interno necesita importe mayor a cero.");
+    if (internalCostDraft.basePrice < 0) {
+      showSavedMessage("El costo interno no puede tener importe negativo.");
       return;
     }
 
-    const item: QuoteItem = {
-      id: makeId("internal-item"),
-      name: internalCostDraft.name.trim(),
-      category: internalCostDraft.category,
-      billingType: internalCostDraft.billingType,
-      unitPrice: Math.max(0, internalCostDraft.basePrice),
-      quantity: 1,
-      estimatedHours: Math.max(0, internalCostDraft.estimatedHours),
-      source: "manual",
-      requiresApproval: true,
-      visibleToClient: false,
-      notes: internalCostDraft.descriptionInternal?.trim() || "Costo interno agregado a la cotización.",
-    };
+    const item = quoteItemFromInternalCost(internalCostDraft, internalCostQuantity);
 
     setItems((current) => [...current, item]);
     setInternalCostDraft(defaultInternalCostDraft());
+    setInternalCostQuantity(1);
     showSavedMessage("Costo interno agregado. Sí suma al precio, pero no se lista al cliente.");
+  }
+
+  function addInternalCatalogCost(cost: Omit<ServiceItem, "active" | "source">) {
+    if (!canEditCurrentQuote) {
+      showSavedMessage(currentQuoteLocked ? "Cotización bloqueada. Crea una revisión para agregar costos internos." : "Tu rol no permite editar cotizaciones.");
+      return;
+    }
+
+    setItems((current) => [...current, quoteItemFromInternalCost(cost)]);
+    showSavedMessage(`${cost.name} agregado como costo interno oculto.`);
   }
 
   function updateItem(id: string, patch: Partial<QuoteItem>) {
@@ -1927,22 +2109,36 @@ export function CotizadorApp() {
                   placeholder="Ej. WhatsApp, pacientes, reportes, app móvil..."
                 />
 
-                <div className="suggestions">
-                  {suggestions.map((service) => (
-                    <article className="service-row" key={service.id}>
-                      <div>
-                        <h4>{service.name}</h4>
-                        <p>{service.descriptionClient}</p>
-                        <div className="meta-row">
-                          <span className="meta">{categoryLabels[service.category]}</span>
-                          <span className="meta">{formatBillingType(service.billingType)}</span>
-                          <span className="meta">{formatCurrency(service.basePrice)}</span>
-                          <span className="meta">{service.estimatedHours} h</span>
-                        </div>
-                      </div>
-                      <button className="btn primary" disabled={!canEditCurrentQuote} onClick={() => addService(service)}>Agregar</button>
-                    </article>
-                  ))}
+                <div className="compact-table-wrap">
+                  <table className="compact-table">
+                    <thead>
+                      <tr>
+                        <th>Concepto / módulo</th>
+                        <th>Categoría</th>
+                        <th>Tipo</th>
+                        <th>Precio</th>
+                        <th>Horas</th>
+                        <th>Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {suggestions.map((service) => (
+                        <tr key={service.id}>
+                          <td>
+                            <strong>{service.name}</strong>
+                            <small>{service.descriptionClient}</small>
+                          </td>
+                          <td>{categoryLabels[service.category]}</td>
+                          <td>{formatBillingType(service.billingType)}</td>
+                          <td>{formatCurrency(service.basePrice)}</td>
+                          <td>{service.estimatedHours} h</td>
+                          <td>
+                            <button className="btn primary small" disabled={!canEditCurrentQuote} onClick={() => addService(service)}>Agregar</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
 
                 {normalizedQuery && !exactServiceExists && (
@@ -2015,7 +2211,7 @@ export function CotizadorApp() {
                 </div>
               </div>
 
-              <div className="form-grid">
+              <div className="form-grid internal-cost-form">
                 <div className="field">
                   <label>Concepto interno</label>
                   <input disabled={!canEditCurrentQuote} value={internalCostDraft.name} onChange={(event) => setInternalCostDraft({ ...internalCostDraft, name: event.target.value })} placeholder="Ej. Hosting, servidor, dominio, API, licencia" />
@@ -2038,7 +2234,11 @@ export function CotizadorApp() {
                   </select>
                 </div>
                 <div className="field">
-                  <label>Importe interno</label>
+                  <label>Cant.</label>
+                  <input disabled={!canEditCurrentQuote} type="number" min="1" value={internalCostQuantity} onChange={(event) => setInternalCostQuantity(Math.max(1, safeNumber(event.target.value, 1)))} />
+                </div>
+                <div className="field">
+                  <label>Importe unitario</label>
                   <input disabled={!canEditCurrentQuote} type="number" min="0" value={internalCostDraft.basePrice} onChange={(event) => setInternalCostDraft({ ...internalCostDraft, basePrice: safeNumber(event.target.value) })} />
                 </div>
                 <div className="field">
@@ -2052,40 +2252,105 @@ export function CotizadorApp() {
               </div>
 
               <div className="split-actions" style={{ marginTop: 14 }}>
-                <button className="btn success" disabled={!canEditCurrentQuote || !internalCostDraft.name.trim() || internalCostDraft.basePrice <= 0} onClick={addInternalCost}>Agregar costo interno</button>
-                <button className="btn ghost" disabled={!canEditCurrentQuote} onClick={() => setInternalCostDraft(defaultInternalCostDraft())}>Limpiar</button>
+                <button className="btn success" disabled={!canEditCurrentQuote || !internalCostDraft.name.trim() || internalCostDraft.basePrice < 0} onClick={addInternalCost}>Agregar costo interno</button>
+                <button className="btn ghost" disabled={!canEditCurrentQuote} onClick={() => { setInternalCostDraft(defaultInternalCostDraft()); setInternalCostQuantity(1); }}>Limpiar</button>
               </div>
 
-              <div className="notice info" style={{ marginTop: 14 }}>
-                Total interno oculto: <strong>{formatCurrency(internalCostSubtotal)}</strong>. Estos conceptos no aparecen en el PDF ni en WhatsApp, pero sí protegen margen.
+              <div className="internal-catalog">
+                <div className="field">
+                  <label>Catálogo rápido de costos internos</label>
+                  <input disabled={!canEditCurrentQuote} value={internalCostSearch} onChange={(event) => setInternalCostSearch(event.target.value)} placeholder="Buscar hosting, dominio, servidor, API WhatsApp, Maps API, licencia..." />
+                </div>
+                <div className="compact-table-wrap">
+                  <table className="compact-table">
+                    <thead>
+                      <tr>
+                        <th>Costo interno</th>
+                        <th>Categoría</th>
+                        <th>Tipo</th>
+                        <th>Importe</th>
+                        <th>Horas</th>
+                        <th>Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredInternalCostCatalog.map((cost) => (
+                        <tr key={cost.id}>
+                          <td>
+                            <strong>{cost.name}</strong>
+                            <small>{cost.descriptionInternal}</small>
+                          </td>
+                          <td>{categoryLabels[cost.category]}</td>
+                          <td>{formatBillingType(cost.billingType)}</td>
+                          <td>{formatCurrency(cost.basePrice)}</td>
+                          <td>{cost.estimatedHours} h</td>
+                          <td>
+                            <button className="btn ghost small" disabled={!canEditCurrentQuote} type="button" onClick={() => addInternalCatalogCost(cost)}>
+                              Agregar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="internal-cost-summary">
+                <div><span>Oculto único</span><strong>{formatCurrency(internalCostOneTimeSubtotal)}</strong></div>
+                <div><span>Oculto mensual</span><strong>{formatCurrency(internalCostMonthlySubtotal)}</strong></div>
+                <div><span>Oculto anual</span><strong>{formatCurrency(internalCostAnnualSubtotal)}</strong></div>
+                <div><span>Total oculto</span><strong>{formatCurrency(internalCostSubtotal)}</strong></div>
               </div>
 
               {internalQuoteItems.length > 0 && (
-                <div className="table-like" style={{ marginTop: 14 }}>
-                  {internalQuoteItems.map((item) => (
-                    <article className="quote-row" key={item.id}>
-                      <div>
-                        <h4>{item.name}</h4>
-                        <p>{categoryLabels[item.category]} · {formatBillingType(item.billingType)} · Interno/no visible</p>
-                      </div>
-                      <div className="item-controls">
-                        <div className="field">
-                          <label>Cant.</label>
-                          <input disabled={!canEditCurrentQuote} className="small-input" type="number" min="1" value={item.quantity} onChange={(event) => updateItem(item.id, { quantity: Math.max(1, safeNumber(event.target.value, 1)) })} />
-                        </div>
-                        <div className="field">
-                          <label>Importe</label>
-                          <input disabled={!canEditCurrentQuote} className="small-input" type="number" min="0" value={item.unitPrice} onChange={(event) => updateItem(item.id, { unitPrice: safeNumber(event.target.value) })} />
-                        </div>
-                        <div className="field">
-                          <label>Horas</label>
-                          <input disabled={!canEditCurrentQuote} className="small-input" type="number" min="0" value={item.estimatedHours} onChange={(event) => updateItem(item.id, { estimatedHours: safeNumber(event.target.value) })} />
-                        </div>
-                        <button className="btn ghost" disabled={!canEditCurrentQuote} onClick={() => updateItem(item.id, { visibleToClient: true })}>Pasar a cliente</button>
-                        <button className="btn danger" disabled={!canEditCurrentQuote} onClick={() => removeItem(item.id)}>Quitar</button>
-                      </div>
-                    </article>
-                  ))}
+                <div className="internal-cost-table-wrap">
+                  <table className="internal-cost-table">
+                    <thead>
+                      <tr>
+                        <th>Concepto</th>
+                        <th>Categoría</th>
+                        <th>Tipo</th>
+                        <th>Cant.</th>
+                        <th>Importe unitario</th>
+                        <th>Total</th>
+                        <th>Horas</th>
+                        <th>Visible al cliente</th>
+                        <th>Nota interna</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {internalQuoteItems.map((item) => (
+                        <tr key={item.id}>
+                          <td>
+                            <input disabled={!canEditCurrentQuote} value={item.name} onChange={(event) => updateItem(item.id, { name: event.target.value })} />
+                          </td>
+                          <td>{categoryLabels[item.category]}</td>
+                          <td>{formatBillingType(item.billingType)}</td>
+                          <td>
+                            <input disabled={!canEditCurrentQuote} type="number" min="1" value={item.quantity} onChange={(event) => updateItem(item.id, { quantity: Math.max(1, safeNumber(event.target.value, 1)) })} />
+                          </td>
+                          <td>
+                            <input disabled={!canEditCurrentQuote} type="number" min="0" value={item.unitPrice} onChange={(event) => updateItem(item.id, { unitPrice: Math.max(0, safeNumber(event.target.value)) })} />
+                          </td>
+                          <td><strong>{formatCurrency(item.unitPrice * item.quantity)}</strong></td>
+                          <td>
+                            <input disabled={!canEditCurrentQuote} type="number" min="0" value={item.estimatedHours} onChange={(event) => updateItem(item.id, { estimatedHours: Math.max(0, safeNumber(event.target.value)) })} />
+                          </td>
+                          <td>
+                            <input checked={item.visibleToClient !== false} disabled={!canEditCurrentQuote} type="checkbox" onChange={(event) => updateItem(item.id, { visibleToClient: event.target.checked })} />
+                          </td>
+                          <td>
+                            <input disabled={!canEditCurrentQuote} value={item.notes ?? ""} onChange={(event) => updateItem(item.id, { notes: event.target.value })} />
+                          </td>
+                          <td>
+                            <button className="btn danger small" disabled={!canEditCurrentQuote} onClick={() => removeItem(item.id)}>Quitar</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </section>
@@ -2101,30 +2366,46 @@ export function CotizadorApp() {
               {visibleQuoteItems.length === 0 ? (
                 <div className="notice">Todavía no hay conceptos visibles al cliente. Busca un servicio o crea uno nuevo desde el buscador.</div>
               ) : (
-                <div className="table-like">
-                  {visibleQuoteItems.map((item) => (
-                    <article className="quote-row" key={item.id}>
-                      <div>
-                        <h4>{item.name}</h4>
-                        <p>
-                          {categoryLabels[item.category]} · {formatBillingType(item.billingType)} · {item.source === "manual" ? "Manual" : "Catálogo"}
-                          {item.requiresApproval ? " · Revisión interna" : ""}
-                        </p>
-                      </div>
-                      <div className="item-controls">
-                        <div className="field">
-                          <label>Cant.</label>
-                          <input disabled={!canEditCurrentQuote} className="small-input" type="number" min="1" value={item.quantity} onChange={(event) => updateItem(item.id, { quantity: Math.max(1, safeNumber(event.target.value, 1)) })} />
-                        </div>
-                        <div className="field">
-                          <label>Precio</label>
-                          <input disabled={!canEditCurrentQuote} className="small-input" type="number" min="0" value={item.unitPrice} onChange={(event) => updateItem(item.id, { unitPrice: safeNumber(event.target.value) })} />
-                        </div>
-                        <button className="btn ghost" disabled={!canEditCurrentQuote} onClick={() => updateItem(item.id, { visibleToClient: false })}>Pasar a interno</button>
-                        <button className="btn danger" disabled={!canEditCurrentQuote} onClick={() => removeItem(item.id)}>Quitar</button>
-                      </div>
-                    </article>
-                  ))}
+                <div className="compact-table-wrap">
+                  <table className="compact-table">
+                    <thead>
+                      <tr>
+                        <th>Concepto</th>
+                        <th>Tipo</th>
+                        <th>Cant.</th>
+                        <th>Precio unitario</th>
+                        <th>Total</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleQuoteItems.map((item) => (
+                        <tr key={item.id}>
+                          <td>
+                            <strong>{item.name}</strong>
+                            <small>
+                              {categoryLabels[item.category]} · {item.source === "manual" ? "Manual" : "Catálogo"}
+                              {item.requiresApproval ? " · Revisión interna" : ""}
+                            </small>
+                          </td>
+                          <td>{formatBillingType(item.billingType)}</td>
+                          <td>
+                            <input disabled={!canEditCurrentQuote} type="number" min="1" value={item.quantity} onChange={(event) => updateItem(item.id, { quantity: Math.max(1, safeNumber(event.target.value, 1)) })} />
+                          </td>
+                          <td>
+                            <input disabled={!canEditCurrentQuote} type="number" min="0" value={item.unitPrice} onChange={(event) => updateItem(item.id, { unitPrice: Math.max(0, safeNumber(event.target.value)) })} />
+                          </td>
+                          <td><strong>{formatCurrency(item.unitPrice * item.quantity)}</strong></td>
+                          <td>
+                            <div className="compact-actions">
+                              <button className="btn ghost small" disabled={!canEditCurrentQuote} onClick={() => updateItem(item.id, { visibleToClient: false })}>Interno</button>
+                              <button className="btn danger small" disabled={!canEditCurrentQuote} onClick={() => removeItem(item.id)}>Quitar</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </section>
@@ -2179,7 +2460,7 @@ export function CotizadorApp() {
                 <div className="service-row">
                   <div>
                     <h4>Costos internos/no visibles</h4>
-                    <p>Infraestructura, hosting, servidor, APIs o licencias incluidas sin listarlas al cliente.</p>
+                    <p>Único {formatCurrency(internalCostOneTimeSubtotal)} · Mensual {formatCurrency(internalCostMonthlySubtotal)} · Anual {formatCurrency(internalCostAnnualSubtotal)}</p>
                   </div>
                   <strong>{formatCurrency(internalCostSubtotal)}</strong>
                 </div>
@@ -2671,7 +2952,7 @@ export function CotizadorApp() {
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((item) => (
+                    {visibleQuoteItems.map((item) => (
                       <tr key={item.id}>
                         <td>
                           <strong>{item.name}</strong>
@@ -2721,7 +3002,7 @@ export function CotizadorApp() {
 
 
       {activeTab === "catalog" && (
-        <section className="grid two">
+        <section className="grid catalog-page">
           <section className="card catalog-editor-card">
             <div className="card-title">
               <div>
@@ -2851,42 +3132,59 @@ export function CotizadorApp() {
               </div>
             </div>
 
-            <div className="catalog-list">
-              {filteredCatalogServices.length === 0 ? (
-                <div className="notice">No hay servicios con esos filtros.</div>
-              ) : (
-                filteredCatalogServices.map((service) => {
-                  const isBaseService = baseCatalogServices.some((baseService) => baseService.id === service.id);
-                  const hasOverride = Boolean(serviceOverrides[service.id]);
-                  const isCustomService = customServices.some((customService) => customService.id === service.id);
+            {filteredCatalogServices.length === 0 ? (
+              <div className="notice">No hay servicios con esos filtros.</div>
+            ) : (
+              <div className="compact-table-wrap">
+                <table className="compact-table catalog-table">
+                  <thead>
+                    <tr>
+                      <th>Servicio</th>
+                      <th>Descripción</th>
+                      <th>Categoría</th>
+                      <th>Tipo</th>
+                      <th>Precio</th>
+                      <th>Horas</th>
+                      <th>Estado</th>
+                      <th>Origen</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredCatalogServices.map((service) => {
+                      const isBaseService = baseCatalogServices.some((baseService) => baseService.id === service.id);
+                      const hasOverride = Boolean(serviceOverrides[service.id]);
+                      const isCustomService = customServices.some((customService) => customService.id === service.id);
 
-                  return (
-                    <article className={`service-row catalog-row ${service.active ? "" : "inactive"}`} key={service.id}>
-                      <div>
-                        <h4>{service.name}</h4>
-                        <p>{service.descriptionClient}</p>
-                        <div className="meta-row">
-                          <span className="meta">{categoryLabels[service.category]}</span>
-                          <span className="meta">{formatBillingType(service.billingType)}</span>
-                          <span className="meta">{formatCurrency(service.basePrice)}</span>
-                          <span className="meta">{service.estimatedHours} h</span>
-                          <span className="meta">{service.active ? "Activo" : "Inactivo"}</span>
-                          <span className="meta">{isBaseService ? (hasOverride ? "Base ajustado" : "Base") : "Personalizado"}</span>
-                        </div>
-                      </div>
-                      <div className="catalog-actions">
-                        <button className="btn ghost small" onClick={() => startEditCatalogService(service)}>Editar</button>
-                        <button className="btn primary small" onClick={() => addService(service)} disabled={!service.active}>Cotizar</button>
-                        <button className="btn warning small" onClick={() => toggleCatalogService(service)}>{service.active ? "Desactivar" : "Activar"}</button>
-                        {isBaseService && <button className="btn ghost small" onClick={() => cloneServiceToCatalog(service)}>Copiar</button>}
-                        {isBaseService && hasOverride && <button className="btn danger small" onClick={() => resetBaseCatalogService(service.id)}>Restaurar</button>}
-                        {isCustomService && <button className="btn danger small" onClick={() => deleteCustomCatalogService(service.id)}>Eliminar</button>}
-                      </div>
-                    </article>
-                  );
-                })
-              )}
-            </div>
+                      return (
+                        <tr className={service.active ? "" : "inactive-row"} key={service.id}>
+                          <td>
+                            <strong>{service.name}</strong>
+                          </td>
+                          <td className="description-cell">{service.descriptionClient}</td>
+                          <td>{categoryLabels[service.category]}</td>
+                          <td>{formatBillingType(service.billingType)}</td>
+                          <td>{formatCurrency(service.basePrice)}</td>
+                          <td>{service.estimatedHours} h</td>
+                          <td>{service.active ? "Activo" : "Inactivo"}</td>
+                          <td>{isBaseService ? (hasOverride ? "Base ajustado" : "Base") : "Personalizado"}</td>
+                          <td>
+                            <div className="compact-actions">
+                              <button className="btn primary small" onClick={() => addService(service)} disabled={!service.active}>Cotizar</button>
+                              <button className="btn ghost small" onClick={() => startEditCatalogService(service)}>Editar</button>
+                              <button className="btn warning small" onClick={() => toggleCatalogService(service)}>{service.active ? "Desactivar" : "Activar"}</button>
+                              {isBaseService && <button className="btn ghost small" onClick={() => cloneServiceToCatalog(service)}>Copiar</button>}
+                              {isBaseService && hasOverride && <button className="btn danger small" onClick={() => resetBaseCatalogService(service.id)}>Restaurar</button>}
+                              {isCustomService && <button className="btn danger small" onClick={() => deleteCustomCatalogService(service.id)}>Eliminar</button>}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
         </section>
       )}
