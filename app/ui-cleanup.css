@@ -1,0 +1,100 @@
+/* Sprint 2.8.3 - Limpieza visual de producción sin rediseñar */
+
+/* Header principal: ocultar indicadores técnicos/debug sin afectar la pantalla /users. */
+.app-shell > .topbar .pill-row:has(.pill:nth-child(6)) .pill:nth-child(-n + 4),
+.app-shell > .topbar .pill-row:has(.pill:nth-child(6)) .pill:nth-child(6) {
+  display: none;
+}
+
+.app-shell > .topbar .pill-row:has(.pill:nth-child(6)) {
+  justify-content: flex-end;
+}
+
+/* Checks de permisos en administración de usuarios, manteniendo el estilo de cards actual. */
+.permission-card:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.permission-card:has(input[type="checkbox"]) input[type="checkbox"],
+.compact-check input[type="checkbox"] {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+}
+
+.compact-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid rgba(214, 221, 232, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted-2);
+  font-size: 0.78rem;
+  line-height: 1.25;
+}
+
+.history-actions:has(.compact-check) {
+  width: min(430px, 100%);
+  grid-template-columns: 1fr;
+  align-items: stretch;
+}
+
+.history-actions:has(.compact-check) .btn,
+.history-actions:has(.compact-check) select {
+  width: 100%;
+}
+
+/* Desktop/tablet: mantener cards, pero permitir que usuarios no se encimen. */
+.history-row:has(.compact-check) {
+  align-items: start;
+}
+
+.history-row:has(.compact-check) .permission-list {
+  max-width: 100%;
+}
+
+/* Responsive sin cambiar look: mismas cards, sólo acomodo. */
+@media (max-width: 900px) {
+  .history-actions:has(.compact-check) {
+    width: 100%;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell > .topbar .pill-row:has(.pill:nth-child(6)) {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell > .topbar .pill-row:has(.pill:nth-child(6)) .pill {
+    justify-content: center;
+  }
+
+  .permission-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .permission-card:has(input[type="checkbox"]) {
+    min-height: 48px;
+    padding: 13px;
+  }
+
+  .history-row:has(.compact-check) {
+    grid-template-columns: 1fr;
+  }
+
+  .history-actions:has(.compact-check) {
+    gap: 7px;
+  }
+
+  .compact-check {
+    min-height: 44px;
+    padding: 10px 11px;
+    font-size: 0.82rem;
+  }
+}
