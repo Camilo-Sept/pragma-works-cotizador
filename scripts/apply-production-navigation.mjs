@@ -13,14 +13,14 @@ function replaceOnce(label, from, to) {
 
 replaceOnce(
   "tabsByRole",
-  `const tabsByRole: Record<UserRole, Array<"quote" | "history" | "reports" | "preview" | "catalog" | "rules" | "security" | "github">> = {
+  String.raw`const tabsByRole: Record<UserRole, Array<"quote" | "history" | "reports" | "preview" | "catalog" | "rules" | "security" | "github">> = {
   admin: ["quote", "history", "reports", "preview", "catalog", "rules", "security", "github"],
   supervisor: ["quote", "history", "reports", "preview", "security"],
   ventas: ["quote", "history", "reports", "preview", "security"],
   operacion: ["history", "reports", "security"],
   lectura: ["history", "reports", "security"],
 };`,
-  `const tabsByRole: Record<UserRole, Array<"quote" | "history" | "reports" | "preview" | "catalog" | "users">> = {
+  String.raw`const tabsByRole: Record<UserRole, Array<"quote" | "history" | "reports" | "preview" | "catalog" | "rules" | "security" | "github" | "users">> = {
   admin: ["quote", "history", "reports", "preview", "catalog", "users"],
   supervisor: ["quote", "history", "reports", "preview"],
   ventas: ["quote", "history", "reports", "preview"],
@@ -31,13 +31,13 @@ replaceOnce(
 
 replaceOnce(
   "activeTab type",
-  `const [activeTab, setActiveTab] = useState<"quote" | "history" | "reports" | "preview" | "catalog" | "rules" | "security" | "github">("quote");`,
-  `const [activeTab, setActiveTab] = useState<"quote" | "history" | "reports" | "preview" | "catalog" | "rules" | "security" | "github" | "users">("quote");`,
+  String.raw`const [activeTab, setActiveTab] = useState<"quote" | "history" | "reports" | "preview" | "catalog" | "rules" | "security" | "github">("quote");`,
+  String.raw`const [activeTab, setActiveTab] = useState<"quote" | "history" | "reports" | "preview" | "catalog" | "rules" | "security" | "github" | "users">("quote");`,
 );
 
 replaceOnce(
   "navigation tabs",
-  `        {availableTabs.includes("rules") && (
+  String.raw`        {availableTabs.includes("rules") && (
           <button className={\`tab-button ${activeTab === "rules" ? "active" : ""}\`} onClick={() => setActiveTab("rules")}>
             Reglas de precio
           </button>
@@ -52,7 +52,7 @@ replaceOnce(
             GitHub / siguiente sprint
           </button>
         )}`,
-  `        {availableTabs.includes("users") && (
+  String.raw`        {availableTabs.includes("users") && (
           <button className="tab-button" onClick={() => window.location.assign("/users")}>
             Usuarios
           </button>
