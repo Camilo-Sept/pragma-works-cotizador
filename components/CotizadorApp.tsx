@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type ChangeEvent, type FormEvent, useEffect, useMemo, useState } from "react";
 import { companyProfile } from "@/data/company";
 import { defaultPricingRules } from "@/data/pricingRules";
 import { initialServices } from "@/data/services";
@@ -17,9 +17,13 @@ import {
   getNextQuoteFolio,
   loadSavedQuotes,
   persistSavedQuotes,
+  QUOTE_FOLIO_COUNTER_KEY,
+  SAVED_QUOTES_KEY,
   sortQuotesByUpdatedAt,
+  syncQuoteFolioCounter,
 } from "@/lib/quoteStorage";
-import { syncQuoteToDatabase } from "@/lib/quoteDatabaseClient";
+import { deleteQuoteFromDatabase, syncQuoteToDatabase } from "@/lib/quoteDatabaseClient";
+import { deleteServiceFromDatabase, syncServiceToDatabase } from "@/lib/serviceDatabaseClient";
 import type {
   BillingType,
   ClientDraft,
@@ -37,6 +41,7 @@ import type {
 const CUSTOM_SERVICES_KEY = "pragma-works-custom-services-v1";
 const SERVICE_OVERRIDES_KEY = "pragma-works-service-overrides-v1";
 const INTERNAL_COST_CATALOG_KEY = "pragma-works-internal-cost-catalog-v1";
+const QUOTE_TEMPLATES_KEY = "pragma-works-quote-templates-v1";
 
 const CURRENT_ROLE_KEY = "pragma-works-current-role-v1";
 
@@ -103,7 +108,7 @@ const rolePermissions: Record<UserRole, PermissionKey[]> = {
 
 const tabsByRole: Record<UserRole, Array<"quote" | "history" | "reports" | "preview" | "catalog" | "users" | "audit" | "approvals">> = {
   admin: ["quote", "history", "reports", "preview", "catalog", "users", "audit", "approvals"],
-  supervisor: ["quote", "history", "reports", "preview"],
+  supervisor: ["quote", "history", "reports", "preview", "approvals"],
   ventas: ["quote", "history", "reports", "preview"],
   operacion: ["history", "reports"],
   lectura: ["history", "reports"],
@@ -178,6 +183,16 @@ const defaultInternalCostDraft = (): Omit<ServiceItem, "id" | "active" | "source
 });
 
 type InternalCostCatalogItem = Omit<ServiceItem, "source">;
+
+type QuoteTemplate = {
+  id: string;
+  name: string;
+  mode: QuoteMode;
+  sourceCodeOption: SourceCodeOption;
+  rules: PricingRules;
+  items: QuoteItem[];
+  createdAt: string;
+};
 
 const baseInternalCostCatalog: InternalCostCatalogItem[] = ([
   {
@@ -591,6 +606,9 @@ export function CotizadorApp() {
   const [editingInternalCatalogId, setEditingInternalCatalogId] = useState<string | null>(null);
   const [internalCostSearch, setInternalCostSearch] = useState("");
   const [internalCostStatus, setInternalCostStatus] = useState<"active" | "inactive" | "all">("active");
+  const [quoteTemplates, setQuoteTemplates] = useState<QuoteTemplate[]>([]);
+  const [templateName, setTemplateName] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [saveManualToCatalog, setSaveManualToCatalog] = useState(true);
   const [copied, setCopied] = useState(false);
   const [savedQuotes, setSavedQuotes] = useState<SavedQuote[]>([]);
@@ -642,6 +660,16 @@ export function CotizadorApp() {
       }
     }
 
+    const templatesRaw = window.localStorage.getItem(QUOTE_TEMPLATES_KEY);
+    if (templatesRaw) {
+      try {
+        const parsed = JSON.parse(templatesRaw) as QuoteTemplate[];
+        if (Array.isArray(parsed)) setQuoteTemplates(parsed);
+      } catch {
+        window.localStorage.removeItem(QUOTE_TEMPLATES_KEY);
+      }
+    }
+
     const localQuotes = loadSavedQuotes();
     setSavedQuotes(localQuotes);
     setValidUntil(getDefaultValidUntil());
@@ -667,6 +695,7 @@ export function CotizadorApp() {
         const mergedQuotes = mergeSavedQuotes(localQuotes, data.quotes);
         setSavedQuotes(mergedQuotes);
         persistSavedQuotes(mergedQuotes);
+        syncQuoteFolioCounter(mergedQuotes);
         setQuotesSource("database");
       } catch (error) {
         console.warn("No se pudo cargar historial desde BD. Se usa historial local.", error);
@@ -725,7 +754,16 @@ export function CotizadorApp() {
         if (servicesResponse.ok) {
           const servicesData = (await servicesResponse.json()) as { services?: ServiceItem[] };
           if (!cancelled && Array.isArray(servicesData.services) && servicesData.services.length > 0) {
-            setBaseCatalogServices(servicesData.services);
+            const visibleServices = servicesData.services.filter((service) => service.visibleToClient !== false);
+            const hiddenServices = servicesData.services
+              .filter((service) => service.visibleToClient === false)
+              .map(({ source: _source, ...service }) => service);
+
+            setBaseCatalogServices(visibleServices);
+            if (hiddenServices.length > 0) {
+              setInternalCostCatalog(hiddenServices);
+              window.localStorage.setItem(INTERNAL_COST_CATALOG_KEY, JSON.stringify(hiddenServices));
+            }
             setCatalogSource("database");
           }
         } else if (!cancelled) {
@@ -781,7 +819,7 @@ export function CotizadorApp() {
   );
 
   const catalogServices = useMemo<ServiceItem[]>(
-    () => [...baseServicesWithOverrides, ...customServices],
+    () => [...new Map([...baseServicesWithOverrides, ...customServices].map((service) => [service.id, service])).values()],
     [baseServicesWithOverrides, customServices],
   );
 
@@ -1134,6 +1172,19 @@ export function CotizadorApp() {
     window.localStorage.setItem(INTERNAL_COST_CATALOG_KEY, JSON.stringify(nextCatalog));
   }
 
+  function syncCatalogService(service: ServiceItem) {
+    void syncServiceToDatabase(service).then((result) => {
+      if (!result.ok) {
+        console.warn("No se pudo sincronizar el servicio con BD.", result.error);
+        showSavedMessage("Cambio guardado localmente. No se pudo sincronizar el catálogo con BD.");
+      }
+    });
+  }
+
+  function syncInternalCatalogCost(cost: InternalCostCatalogItem) {
+    syncCatalogService({ ...cost, source: "catalog", visibleToClient: false });
+  }
+
   function addService(service: ServiceItem) {
     if (!canEditCurrentQuote) {
       showSavedMessage(currentQuoteLocked ? "Cotización bloqueada. Crea una revisión para modificar conceptos." : "Tu rol no permite editar cotizaciones.");
@@ -1193,7 +1244,7 @@ export function CotizadorApp() {
       source: "catalog",
     };
 
-    const isBaseService = baseCatalogServices.some((service) => service.id === normalizedDraft.id);
+    const isBaseService = initialServices.some((service) => service.id === normalizedDraft.id);
 
     if (isBaseService) {
       persistServiceOverrides({ ...serviceOverrides, [normalizedDraft.id]: normalizedDraft });
@@ -1206,9 +1257,10 @@ export function CotizadorApp() {
       persistCustomServices(nextServices);
     }
 
+    syncCatalogService(normalizedDraft);
     setCatalogDraft(defaultCatalogService());
     setEditingCatalogId(null);
-    showSavedMessage("Servicio guardado en catálogo local.");
+    showSavedMessage("Servicio guardado en el catálogo.");
   }
 
   function cloneServiceToCatalog(service: ServiceItem) {
@@ -1228,6 +1280,7 @@ export function CotizadorApp() {
     };
 
     persistCustomServices([cloned, ...customServices]);
+    syncCatalogService(cloned);
     setCatalogDraft(cloned);
     setEditingCatalogId(cloned.id);
     showSavedMessage("Servicio copiado como concepto editable.");
@@ -1240,18 +1293,24 @@ export function CotizadorApp() {
     }
 
     const updated: ServiceItem = { ...service, active: !service.active };
-    const isBaseService = baseCatalogServices.some((baseService) => baseService.id === service.id);
+    const isBaseService = initialServices.some((baseService) => baseService.id === service.id);
 
     if (isBaseService) {
       persistServiceOverrides({ ...serviceOverrides, [service.id]: updated });
     } else {
-      persistCustomServices(customServices.map((current) => (current.id === service.id ? updated : current)));
+      const exists = customServices.some((current) => current.id === service.id);
+      persistCustomServices(
+        exists
+          ? customServices.map((current) => (current.id === service.id ? updated : current))
+          : [updated, ...customServices],
+      );
     }
 
+    syncCatalogService(updated);
     showSavedMessage(updated.active ? "Servicio activado." : "Servicio desactivado del buscador.");
   }
 
-  function deleteCustomCatalogService(serviceId: string) {
+  async function deleteCustomCatalogService(serviceId: string) {
     if (!canEditCatalog) {
       showSavedMessage("Tu rol no permite eliminar servicios personalizados.");
       return;
@@ -1260,7 +1319,14 @@ export function CotizadorApp() {
     const confirmed = window.confirm("¿Eliminar este servicio personalizado? No se eliminarán cotizaciones ya guardadas.");
     if (!confirmed) return;
 
+    const result = await deleteServiceFromDatabase(serviceId);
+    if (!result.ok && catalogSource === "database") {
+      showSavedMessage(result.error ?? "No se pudo eliminar el servicio de la BD.");
+      return;
+    }
+
     persistCustomServices(customServices.filter((service) => service.id !== serviceId));
+    setBaseCatalogServices((services) => services.filter((service) => service.id !== serviceId));
 
     if (editingCatalogId === serviceId) {
       setCatalogDraft(defaultCatalogService());
@@ -1279,6 +1345,8 @@ export function CotizadorApp() {
     const nextOverrides = { ...serviceOverrides };
     delete nextOverrides[serviceId];
     persistServiceOverrides(nextOverrides);
+    const baseService = initialServices.find((service) => service.id === serviceId);
+    if (baseService) syncCatalogService(baseService);
 
     if (editingCatalogId === serviceId) {
       setCatalogDraft(defaultCatalogService());
@@ -1402,6 +1470,7 @@ export function CotizadorApp() {
       : [normalizedDraft, ...internalCostCatalog];
 
     persistInternalCostCatalog(nextCatalog);
+    syncInternalCatalogCost(normalizedDraft);
     clearInternalCatalogDraft();
     showSavedMessage(exists ? "Gasto oculto actualizado en el catálogo." : "Gasto oculto creado en el catálogo.");
   }
@@ -1417,6 +1486,7 @@ export function CotizadorApp() {
         current.id === cost.id ? { ...current, active: !current.active } : current
       )),
     );
+    syncInternalCatalogCost({ ...cost, active: !cost.active });
     showSavedMessage(cost.active ? "Gasto oculto desactivado." : "Gasto oculto activado.");
   }
 
@@ -1428,13 +1498,15 @@ export function CotizadorApp() {
 
     const isBaseCost = baseInternalCostCatalog.some((baseCost) => baseCost.id === cost.id);
     if (isBaseCost) {
+      const restoredCost = baseInternalCostCatalog.find((baseCost) => baseCost.id === cost.id);
       persistInternalCostCatalog(
         internalCostCatalog.map((current) => (
           current.id === cost.id
-            ? baseInternalCostCatalog.find((baseCost) => baseCost.id === cost.id) ?? current
+            ? restoredCost ?? current
             : current
         )),
       );
+      if (restoredCost) syncInternalCatalogCost(restoredCost);
       clearInternalCatalogDraft();
       showSavedMessage("Gasto oculto base restaurado.");
       return;
@@ -1442,6 +1514,11 @@ export function CotizadorApp() {
 
     if (!window.confirm("¿Eliminar este gasto oculto personalizado del catálogo?")) return;
 
+    void deleteServiceFromDatabase(cost.id).then((result) => {
+      if (!result.ok) {
+        console.warn("No se pudo eliminar el gasto oculto de la BD.", result.error);
+      }
+    });
     persistInternalCostCatalog(internalCostCatalog.filter((current) => current.id !== cost.id));
     if (editingInternalCatalogId === cost.id) clearInternalCatalogDraft();
     showSavedMessage("Gasto oculto personalizado eliminado.");
@@ -1626,7 +1703,7 @@ export function CotizadorApp() {
     showSavedMessage(`Revisión ${revisionQuote.folio} creada como borrador.`);
   }
 
-  function deleteQuote(quoteId: string) {
+  async function deleteQuote(quoteId: string) {
     const quote = savedQuotes.find((savedQuote) => savedQuote.id === quoteId);
     if (!quote) return;
 
@@ -1642,6 +1719,12 @@ export function CotizadorApp() {
 
     const confirmed = window.confirm(`¿Eliminar ${quote.folio}? Esta acción no se puede deshacer.`);
     if (!confirmed) return;
+
+    const result = await deleteQuoteFromDatabase(quoteId);
+    if (!result.ok && quotesSource === "database") {
+      showSavedMessage(result.error ?? "No se pudo eliminar la cotización de la BD.");
+      return;
+    }
 
     const nextQuotes = savedQuotes.filter((savedQuote) => savedQuote.id !== quoteId);
     persistQuotes(nextQuotes);
@@ -1671,6 +1754,8 @@ export function CotizadorApp() {
     );
 
     persistQuotes(nextQuotes);
+    const archivedQuote = nextQuotes.find((savedQuote) => savedQuote.id === quoteId);
+    if (archivedQuote) syncSavedQuoteToDatabase(archivedQuote);
 
     if (currentQuoteId === quoteId) {
       resetQuote();
@@ -1693,6 +1778,8 @@ export function CotizadorApp() {
     );
 
     persistQuotes(nextQuotes);
+    const updatedQuote = nextQuotes.find((quote) => quote.id === quoteId);
+    if (updatedQuote) syncSavedQuoteToDatabase(updatedQuote);
 
     if (currentQuoteId === quoteId) {
       setQuoteStatus(status);
@@ -1705,6 +1792,146 @@ export function CotizadorApp() {
     setReportSearch("");
     setReportFromDate("");
     setReportToDate("");
+  }
+
+  function persistQuoteTemplates(templates: QuoteTemplate[]) {
+    setQuoteTemplates(templates);
+    window.localStorage.setItem(QUOTE_TEMPLATES_KEY, JSON.stringify(templates));
+  }
+
+  function saveCurrentAsTemplate() {
+    if (!canCreateQuotes || items.length === 0) {
+      showSavedMessage("Agrega conceptos antes de guardar una plantilla.");
+      return;
+    }
+
+    const name = templateName.trim() || client.projectName.trim() || `Plantilla ${quoteTemplates.length + 1}`;
+    const template: QuoteTemplate = {
+      id: makeId("quote-template"),
+      name,
+      mode,
+      sourceCodeOption: mode === "rental" ? "none" : sourceCodeOption,
+      rules: effectiveRules,
+      items: cloneQuoteItems(items),
+      createdAt: new Date().toISOString(),
+    };
+
+    persistQuoteTemplates([template, ...quoteTemplates]);
+    setTemplateName("");
+    setSelectedTemplateId(template.id);
+    showSavedMessage(`Plantilla "${name}" guardada.`);
+  }
+
+  function applySelectedTemplate() {
+    const template = quoteTemplates.find((current) => current.id === selectedTemplateId);
+    if (!template) {
+      showSavedMessage("Selecciona una plantilla.");
+      return;
+    }
+
+    if (!canCreateQuotes) {
+      showSavedMessage("Tu rol no permite crear cotizaciones desde plantillas.");
+      return;
+    }
+
+    setClient(defaultClient);
+    setMode(template.mode);
+    setSourceCodeOption(template.sourceCodeOption);
+    setRules({ ...defaultPricingRules, ...template.rules });
+    setItems(cloneQuoteItems(template.items));
+    setCurrentQuoteId(null);
+    setQuoteStatus("draft");
+    setValidUntil(getDefaultValidUntil());
+    setActiveTab("quote");
+    showSavedMessage(`Plantilla "${template.name}" aplicada a una cotización nueva.`);
+  }
+
+  function deleteSelectedTemplate() {
+    const template = quoteTemplates.find((current) => current.id === selectedTemplateId);
+    if (!template) return;
+    if (!window.confirm(`¿Eliminar la plantilla "${template.name}"?`)) return;
+
+    persistQuoteTemplates(quoteTemplates.filter((current) => current.id !== template.id));
+    setSelectedTemplateId("");
+    showSavedMessage("Plantilla eliminada.");
+  }
+
+  function downloadJson(filename: string, data: unknown) {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function exportBackup() {
+    if (!canExportReports) {
+      showSavedMessage("Tu rol no permite exportar respaldos.");
+      return;
+    }
+
+    downloadJson(`respaldo-cotizador-${new Date().toISOString().slice(0, 10)}.json`, {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      quotes: savedQuotes,
+      customServices,
+      serviceOverrides,
+      internalCostCatalog,
+      quoteTemplates,
+      folioCounter: window.localStorage.getItem(QUOTE_FOLIO_COUNTER_KEY) ?? "0",
+    });
+    showSavedMessage("Respaldo descargado. No contiene contraseñas ni secretos.");
+  }
+
+  async function importBackup(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    if (!canExportReports) {
+      showSavedMessage("Tu rol no permite restaurar respaldos.");
+      return;
+    }
+
+    try {
+      const backup = JSON.parse(await file.text()) as {
+        version?: number;
+        quotes?: SavedQuote[];
+        customServices?: ServiceItem[];
+        serviceOverrides?: Record<string, ServiceItem>;
+        internalCostCatalog?: InternalCostCatalogItem[];
+        quoteTemplates?: QuoteTemplate[];
+        folioCounter?: string;
+      };
+
+      if (backup.version !== 1 || !Array.isArray(backup.quotes)) {
+        throw new Error("Formato incompatible");
+      }
+
+      const confirmed = window.confirm("¿Restaurar este respaldo? Reemplazará los datos locales de este navegador.");
+      if (!confirmed) return;
+
+      const restoredCustomServices = Array.isArray(backup.customServices) ? backup.customServices : [];
+      const restoredOverrides = backup.serviceOverrides && typeof backup.serviceOverrides === "object" ? backup.serviceOverrides : {};
+      const restoredInternalCatalog = Array.isArray(backup.internalCostCatalog) ? backup.internalCostCatalog : baseInternalCostCatalog;
+      const restoredTemplates = Array.isArray(backup.quoteTemplates) ? backup.quoteTemplates : [];
+
+      persistQuotes(backup.quotes);
+      persistCustomServices(restoredCustomServices);
+      persistServiceOverrides(restoredOverrides);
+      persistInternalCostCatalog(restoredInternalCatalog);
+      persistQuoteTemplates(restoredTemplates);
+      window.localStorage.setItem(SAVED_QUOTES_KEY, JSON.stringify(backup.quotes));
+      window.localStorage.setItem(QUOTE_FOLIO_COUNTER_KEY, backup.folioCounter ?? "0");
+      resetQuote();
+      showSavedMessage("Respaldo restaurado correctamente.");
+    } catch {
+      showSavedMessage("El archivo no es un respaldo válido del cotizador.");
+    }
   }
 
   function exportReportCsv() {
@@ -2271,7 +2498,7 @@ export function CotizadorApp() {
                     <div className="card-title">
                       <div>
                         <h3>+ Crear nuevo concepto: “{query.trim()}”</h3>
-                        <p>Úsalo sólo para esta cotización o guárdalo en el catálogo local.</p>
+                        <p>Úsalo sólo para esta cotización o guárdalo para futuras cotizaciones.</p>
                       </div>
                     </div>
 
@@ -2387,7 +2614,7 @@ export function CotizadorApp() {
                     <div className="card-title">
                       <div>
                         <h3>{editingInternalCatalogId ? "Editar gasto oculto del catálogo" : "Nuevo gasto oculto para el catálogo"}</h3>
-                        <p>Estos datos quedan disponibles para futuras cotizaciones en este navegador.</p>
+                        <p>Estos datos quedan disponibles para futuras cotizaciones y se sincronizan con el catálogo central.</p>
                       </div>
                       <button className="btn ghost small" type="button" onClick={clearInternalCatalogDraft}>Limpiar</button>
                     </div>
@@ -2676,7 +2903,7 @@ export function CotizadorApp() {
               <div className="card-title">
                 <div>
                   <h2>Guardar cotización</h2>
-                  <p>En Sprint 1.1 se guarda localmente en este navegador.</p>
+                  <p>Se guarda en PostgreSQL con respaldo local para conservar el trabajo ante una desconexión.</p>
                 </div>
               </div>
               <div className="grid">
@@ -2692,6 +2919,22 @@ export function CotizadorApp() {
                   <button className="btn primary" disabled={!canEditCurrentQuote} onClick={() => saveQuote("sent")}>Guardar como enviada</button>
                   <button className="btn success" disabled={!canEditCurrentQuote || !canChangeQuoteStatus} onClick={() => saveQuote("accepted")}>Marcar aceptada</button>
                   <button className="btn print" onClick={openPrintPreview}>Vista / PDF</button>
+                </div>
+                <div className="template-tools">
+                  <div className="field">
+                    <label>Nombre de plantilla</label>
+                    <input value={templateName} onChange={(event) => setTemplateName(event.target.value)} placeholder="Ej. Sitio corporativo estándar" />
+                  </div>
+                  <button className="btn ghost" disabled={!canCreateQuotes || items.length === 0} type="button" onClick={saveCurrentAsTemplate}>Guardar plantilla</button>
+                  <div className="field">
+                    <label>Plantillas guardadas</label>
+                    <select value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value)}>
+                      <option value="">Seleccionar...</option>
+                      {quoteTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+                    </select>
+                  </div>
+                  <button className="btn primary" disabled={!selectedTemplateId || !canCreateQuotes} type="button" onClick={applySelectedTemplate}>Usar plantilla</button>
+                  <button className="btn danger" disabled={!selectedTemplateId} type="button" onClick={deleteSelectedTemplate}>Eliminar</button>
                 </div>
               </div>
             </section>
@@ -2792,12 +3035,17 @@ export function CotizadorApp() {
           <section className="card">
             <div className="card-title">
               <div>
-                <h2>Reportes locales</h2>
+                <h2>Reportes comerciales</h2>
                 <p>Información útil para seguimiento: dinero aceptado, trabajo pendiente, vencimientos y cotizaciones por cerrar.</p>
               </div>
               <div className="quote-actions no-print">
                 <button className="btn ghost" onClick={clearReportFilters}>Limpiar filtros</button>
                 <button className="btn success" disabled={!canExportReports} onClick={exportReportCsv}>Exportar datos CSV</button>
+                <button className="btn ghost" disabled={!canExportReports} onClick={exportBackup}>Descargar respaldo</button>
+                <label className={`btn ghost ${!canExportReports ? "disabled" : ""}`}>
+                  Restaurar respaldo
+                  <input hidden disabled={!canExportReports} type="file" accept="application/json,.json" onChange={importBackup} />
+                </label>
                 <button className="btn print" onClick={printReportsSummary}>PDF resumen</button>
                 <button className="btn ghost" onClick={printReportsDetail}>PDF detalle</button>
               </div>
@@ -2847,7 +3095,7 @@ export function CotizadorApp() {
                 <p>
                   {reportFilterLabels.length > 0
                     ? "Filtros aplicados. Los números de abajo ya están recalculados con esos filtros."
-                    : "Sin filtros aplicados. Estás viendo el total local guardado en este navegador."}
+                    : "Sin filtros aplicados. Estás viendo todas las cotizaciones disponibles."}
                 </p>
               </div>
               <div className="filter-chip-row">
@@ -2861,7 +3109,7 @@ export function CotizadorApp() {
             </div>
 
             <div className="print-only report-print-note">
-              <strong>Reporte operativo de cotizaciones</strong> · Generado desde datos locales del navegador.
+              <strong>Reporte operativo de cotizaciones</strong> · Generado desde el historial disponible.
               {reportFilterLabels.length > 0 ? ` Filtros aplicados: ${reportFilterLabels.join(" · ")}.` : " Sin filtros aplicados."}
             </div>
           </section>
@@ -3212,7 +3460,7 @@ export function CotizadorApp() {
             <div className="card-title">
               <div>
                 <h2>{editingCatalogId ? "Editar servicio" : "Nuevo servicio"}</h2>
-                <p>Administra servicios y precios sin tocar código. Se guardan localmente en este navegador.</p>
+                <p>Administra servicios y precios sin tocar código. Los cambios se sincronizan con PostgreSQL y conservan respaldo local.</p>
               </div>
               <button className="btn ghost" onClick={clearCatalogDraft}>Limpiar formulario</button>
             </div>
@@ -3308,7 +3556,7 @@ export function CotizadorApp() {
           <section className="card">
             <div className="card-title">
               <div>
-                <h2>Catálogo administrable local</h2>
+                <h2>Catálogo administrable</h2>
                 <p>Edita precios, activa/desactiva servicios y agrega conceptos permanentes para futuras cotizaciones.</p>
               </div>
             </div>
@@ -3357,9 +3605,9 @@ export function CotizadorApp() {
                   </thead>
                   <tbody>
                     {filteredCatalogServices.map((service) => {
-                      const isBaseService = baseCatalogServices.some((baseService) => baseService.id === service.id);
+                      const isBaseService = initialServices.some((baseService) => baseService.id === service.id);
                       const hasOverride = Boolean(serviceOverrides[service.id]);
-                      const isCustomService = customServices.some((customService) => customService.id === service.id);
+                      const isCustomService = !isBaseService;
 
                       return (
                         <tr className={service.active ? "" : "inactive-row"} key={service.id}>
@@ -3411,7 +3659,7 @@ export function CotizadorApp() {
       )}
 
       <p className="footer-note">
-        {companyProfile.name} · Sprint 1.4 · Reportes locales · Sin datos sensibles · Base limpia para GitHub.
+        {companyProfile.name} · Cotizaciones, catálogos, seguimiento y control comercial.
       </p>
     </main>
   );

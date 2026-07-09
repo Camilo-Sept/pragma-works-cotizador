@@ -33,6 +33,22 @@ export function getNextQuoteFolio(): string {
   return `PW-${String(next).padStart(6, "0")}`;
 }
 
+export function syncQuoteFolioCounter(quotes: SavedQuote[]) {
+  if (typeof window === "undefined") return;
+
+  const highestFolio = quotes.reduce((highest, quote) => {
+    const match = /^PW-(\d+)/i.exec(quote.folio);
+    const value = match ? Number(match[1]) : 0;
+    return Number.isFinite(value) ? Math.max(highest, value) : highest;
+  }, 0);
+  const current = Number(window.localStorage.getItem(QUOTE_FOLIO_COUNTER_KEY) || "0");
+
+  window.localStorage.setItem(
+    QUOTE_FOLIO_COUNTER_KEY,
+    String(Math.max(Number.isFinite(current) ? current : 0, highestFolio)),
+  );
+}
+
 export function getDefaultValidUntil(days = 15): string {
   const date = new Date();
   date.setDate(date.getDate() + days);

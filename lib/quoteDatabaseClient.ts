@@ -35,3 +35,33 @@ export async function syncQuoteToDatabase(
     };
   }
 }
+
+export async function deleteQuoteFromDatabase(
+  quoteId: string,
+): Promise<QuoteDatabaseSyncResult> {
+  try {
+    const response = await fetch(`/api/quotes?id=${encodeURIComponent(quoteId)}`, {
+      method: "DELETE",
+    });
+    const payload = (await response.json().catch(() => null)) as QuoteDatabaseSyncResult | null;
+
+    if (response.status === 404) {
+      return { ok: true };
+    }
+
+    if (!response.ok || !payload?.ok) {
+      return {
+        ok: false,
+        error: payload?.error ?? "No se pudo eliminar la cotización de la BD.",
+      };
+    }
+
+    return { ok: true };
+  } catch (error) {
+    console.warn("No se pudo eliminar la cotización de la BD.", error);
+    return {
+      ok: false,
+      error: "No se pudo eliminar la cotización de la BD.",
+    };
+  }
+}

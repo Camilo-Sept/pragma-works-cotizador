@@ -284,7 +284,7 @@ export async function GET() {
     const quotes = await prisma.quote.findMany({
       ...quoteSelect(),
       orderBy: { updatedAt: "desc" },
-      take: 20,
+      take: 200,
     });
 
     return NextResponse.json({ ok: true, quotes: quotes.map(mapQuoteFromDatabase) });
@@ -317,6 +317,17 @@ export async function POST(request: Request) {
 
     if ((quote.status === "accepted" || quote.status === "rejected") && !hasRole(auth.user, [...quoteDecisionRoles])) {
       return forbiddenResponse("Sólo admin o supervisor pueden guardar cotizaciones aceptadas o rechazadas.");
+    }
+
+    const folioOwner = await prisma.quote.findUnique({
+      where: { folio: quote.folio },
+      select: { id: true },
+    });
+    if (folioOwner && folioOwner.id !== quote.id) {
+      return NextResponse.json(
+        { ok: false, error: "Ese folio ya existe. Recarga el historial y guarda nuevamente." },
+        { status: 409 },
+      );
     }
 
     const savedQuote = await prisma.$transaction(async (tx) => {
@@ -362,9 +373,7 @@ export async function POST(request: Request) {
         orderBy: { updatedAt: "desc" },
       });
 
-      const existingQuote =
-        (await tx.quote.findUnique({ where: { id: quote.id } })) ??
-        (await tx.quote.findUnique({ where: { folio: quote.folio } }));
+      const existingQuote = await tx.quote.findUnique({ where: { id: quote.id } });
 
       const quoteData = {
         id: quote.id,
@@ -456,12 +465,25 @@ export async function POST(request: Request) {
         data: {
           quoteId: persistedQuote.id,
           actorUserId: auth.user.id,
-          action: existingQuote ? AuditAction.UPDATE : AuditAction.CREATE,
+          action: !existingQuote
+            ? (quote.revisionOf ? AuditAction.CREATE_REVISION : AuditAction.CREATE)
+            : !existingQuote.archivedAt && persistedQuote.archivedAt
+              ? AuditAction.ARCHIVE
+              : existingQuote.status !== persistedQuote.status
+                ? AuditAction.STATUS_CHANGE
+                : AuditAction.UPDATE,
           entityType: "quote",
           entityId: persistedQuote.id,
+          before: existingQuote
+            ? {
+                status: existingQuote.status.toLowerCase(),
+                archivedAt: existingQuote.archivedAt?.toISOString() ?? null,
+              }
+            : undefined,
           after: {
             folio: quote.folio,
             status: quote.status,
+            archivedAt: persistedQuote.archivedAt?.toISOString() ?? null,
             itemCount: quote.items.length,
             syncedFrom: "web_app",
           },
@@ -480,6 +502,71 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       { ok: false, error: "No se pudo guardar la cotización en la base de datos." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const auth = await requireRole(["admin"]);
+
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    const quoteId = new URL(request.url).searchParams.get("id")?.trim();
+    if (!quoteId) {
+      return NextResponse.json({ ok: false, error: "Falta el ID de la cotización." }, { status: 400 });
+    }
+
+    const quote = await prisma.quote.findUnique({
+      where: { id: quoteId },
+      select: {
+        id: true,
+        folio: true,
+        status: true,
+        _count: { select: { revisions: true } },
+      },
+    });
+
+    if (!quote) {
+      return NextResponse.json({ ok: false, error: "La cotización no existe." }, { status: 404 });
+    }
+
+    if (quote.status !== QuoteStatus.DRAFT && quote.status !== QuoteStatus.REJECTED) {
+      return forbiddenResponse("Sólo se pueden eliminar cotizaciones en borrador o rechazadas.");
+    }
+
+    if (quote._count.revisions > 0) {
+      return NextResponse.json(
+        { ok: false, error: "No se puede eliminar una cotización que ya tiene revisiones." },
+        { status: 409 },
+      );
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.auditLog.create({
+        data: {
+          actorUserId: auth.user.id,
+          action: AuditAction.DELETE,
+          entityType: "quote",
+          entityId: quote.id,
+          before: {
+            folio: quote.folio,
+            status: quote.status.toLowerCase(),
+          },
+        },
+      });
+      await tx.quote.delete({ where: { id: quote.id } });
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error("Error deleting quote from database", error);
+
+    return NextResponse.json(
+      { ok: false, error: "No se pudo eliminar la cotización de la base de datos." },
       { status: 500 },
     );
   }

@@ -486,6 +486,20 @@ select option {
   gap: 8px;
 }
 
+.template-tools {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(180px, 1fr) auto auto;
+  gap: 8px;
+  align-items: end;
+  padding-top: 12px;
+  border-top: 1px solid rgba(214, 221, 232, 0.1);
+}
+
+.btn.disabled {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
 .compact-table input[type="checkbox"],
 .internal-cost-table input[type="checkbox"] {
   width: 18px;
@@ -1950,6 +1964,7 @@ textarea:disabled {
   .grid.three,
   .form-grid,
   .internal-cost-form,
+  .template-tools,
   .internal-catalog-list,
   .internal-cost-summary,
   .catalog-list,
