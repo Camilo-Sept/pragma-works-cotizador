@@ -36,6 +36,7 @@ import type {
 
 const CUSTOM_SERVICES_KEY = "pragma-works-custom-services-v1";
 const SERVICE_OVERRIDES_KEY = "pragma-works-service-overrides-v1";
+const INTERNAL_COST_CATALOG_KEY = "pragma-works-internal-cost-catalog-v1";
 
 const CURRENT_ROLE_KEY = "pragma-works-current-role-v1";
 
@@ -176,7 +177,9 @@ const defaultInternalCostDraft = (): Omit<ServiceItem, "id" | "active" | "source
   visibleToClient: false,
 });
 
-const internalCostCatalog: Array<Omit<ServiceItem, "active" | "source">> = [
+type InternalCostCatalogItem = Omit<ServiceItem, "source">;
+
+const baseInternalCostCatalog: InternalCostCatalogItem[] = ([
   {
     id: "internal-hosting",
     name: "Hosting",
@@ -309,7 +312,13 @@ const internalCostCatalog: Array<Omit<ServiceItem, "active" | "source">> = [
     requiresApproval: true,
     visibleToClient: false,
   },
-];
+] as Array<Omit<ServiceItem, "active" | "source">>).map((cost) => ({ ...cost, active: true }));
+
+const defaultInternalCatalogDraft = (): InternalCostCatalogItem => ({
+  id: "",
+  ...defaultInternalCostDraft(),
+  active: true,
+});
 
 function makeId(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
@@ -577,7 +586,11 @@ export function CotizadorApp() {
   const [manualDraft, setManualDraft] = useState(defaultManualService());
   const [internalCostDraft, setInternalCostDraft] = useState(defaultInternalCostDraft());
   const [internalCostQuantity, setInternalCostQuantity] = useState(1);
+  const [internalCostCatalog, setInternalCostCatalog] = useState<InternalCostCatalogItem[]>(baseInternalCostCatalog);
+  const [internalCatalogDraft, setInternalCatalogDraft] = useState<InternalCostCatalogItem>(defaultInternalCatalogDraft());
+  const [editingInternalCatalogId, setEditingInternalCatalogId] = useState<string | null>(null);
   const [internalCostSearch, setInternalCostSearch] = useState("");
+  const [internalCostStatus, setInternalCostStatus] = useState<"active" | "inactive" | "all">("active");
   const [saveManualToCatalog, setSaveManualToCatalog] = useState(true);
   const [copied, setCopied] = useState(false);
   const [savedQuotes, setSavedQuotes] = useState<SavedQuote[]>([]);
@@ -614,6 +627,18 @@ export function CotizadorApp() {
         setServiceOverrides(parsed);
       } catch {
         window.localStorage.removeItem(SERVICE_OVERRIDES_KEY);
+      }
+    }
+
+    const internalCatalogRaw = window.localStorage.getItem(INTERNAL_COST_CATALOG_KEY);
+    if (internalCatalogRaw) {
+      try {
+        const parsed = JSON.parse(internalCatalogRaw) as InternalCostCatalogItem[];
+        if (Array.isArray(parsed)) {
+          setInternalCostCatalog(parsed);
+        }
+      } catch {
+        window.localStorage.removeItem(INTERNAL_COST_CATALOG_KEY);
       }
     }
 
@@ -820,20 +845,22 @@ export function CotizadorApp() {
   const filteredInternalCostCatalog = useMemo(() => {
     const search = internalCostSearch.trim().toLowerCase();
 
-    if (!search) return internalCostCatalog;
+    return internalCostCatalog
+      .filter((cost) => internalCostStatus === "all" || (internalCostStatus === "active" ? cost.active : !cost.active))
+      .filter((cost) => {
+        if (!search) return true;
 
-    return internalCostCatalog.filter((cost) =>
-      [
-        cost.name,
-        cost.descriptionInternal ?? "",
-        categoryLabels[cost.category],
-        cost.billingType,
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(search),
-    );
-  }, [internalCostSearch]);
+        return [
+          cost.name,
+          cost.descriptionInternal ?? "",
+          categoryLabels[cost.category],
+          cost.billingType,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(search);
+      });
+  }, [internalCostCatalog, internalCostSearch, internalCostStatus]);
 
   const whatsappSummary = useMemo(
     () => buildWhatsAppSummary({ client, items: visibleQuoteItems, mode, sourceCodeOption, totals }),
@@ -1102,6 +1129,11 @@ export function CotizadorApp() {
     window.localStorage.setItem(SERVICE_OVERRIDES_KEY, JSON.stringify(nextOverrides));
   }
 
+  function persistInternalCostCatalog(nextCatalog: InternalCostCatalogItem[]) {
+    setInternalCostCatalog(nextCatalog);
+    window.localStorage.setItem(INTERNAL_COST_CATALOG_KEY, JSON.stringify(nextCatalog));
+  }
+
   function addService(service: ServiceItem) {
     if (!canEditCurrentQuote) {
       showSavedMessage(currentQuoteLocked ? "Cotización bloqueada. Crea una revisión para modificar conceptos." : "Tu rol no permite editar cotizaciones.");
@@ -1320,6 +1352,99 @@ export function CotizadorApp() {
 
     setItems((current) => [...current, quoteItemFromInternalCost(cost)]);
     showSavedMessage(`${cost.name} agregado como costo interno oculto.`);
+  }
+
+  function clearInternalCatalogDraft() {
+    setInternalCatalogDraft(defaultInternalCatalogDraft());
+    setEditingInternalCatalogId(null);
+  }
+
+  function startEditInternalCatalogCost(cost: InternalCostCatalogItem) {
+    if (!canEditCatalog) {
+      showSavedMessage("Tu rol no permite administrar el catálogo de gastos ocultos.");
+      return;
+    }
+
+    setInternalCatalogDraft({ ...cost });
+    setEditingInternalCatalogId(cost.id);
+  }
+
+  function saveInternalCatalogCost() {
+    if (!canEditCatalog) {
+      showSavedMessage("Tu rol no permite administrar el catálogo de gastos ocultos.");
+      return;
+    }
+
+    if (!internalCatalogDraft.name.trim()) {
+      showSavedMessage("El gasto oculto necesita nombre.");
+      return;
+    }
+
+    if (internalCatalogDraft.basePrice < 0) {
+      showSavedMessage("El importe no puede ser negativo.");
+      return;
+    }
+
+    const normalizedDraft: InternalCostCatalogItem = {
+      ...internalCatalogDraft,
+      id: editingInternalCatalogId ?? makeId("internal-custom"),
+      name: internalCatalogDraft.name.trim(),
+      descriptionClient: "Costo interno no visible en propuesta comercial.",
+      descriptionInternal: internalCatalogDraft.descriptionInternal?.trim() || "",
+      basePrice: Math.max(0, internalCatalogDraft.basePrice),
+      estimatedHours: Math.max(0, internalCatalogDraft.estimatedHours),
+      requiresApproval: true,
+      visibleToClient: false,
+    };
+    const exists = internalCostCatalog.some((cost) => cost.id === normalizedDraft.id);
+    const nextCatalog = exists
+      ? internalCostCatalog.map((cost) => (cost.id === normalizedDraft.id ? normalizedDraft : cost))
+      : [normalizedDraft, ...internalCostCatalog];
+
+    persistInternalCostCatalog(nextCatalog);
+    clearInternalCatalogDraft();
+    showSavedMessage(exists ? "Gasto oculto actualizado en el catálogo." : "Gasto oculto creado en el catálogo.");
+  }
+
+  function toggleInternalCatalogCost(cost: InternalCostCatalogItem) {
+    if (!canEditCatalog) {
+      showSavedMessage("Tu rol no permite administrar el catálogo de gastos ocultos.");
+      return;
+    }
+
+    persistInternalCostCatalog(
+      internalCostCatalog.map((current) => (
+        current.id === cost.id ? { ...current, active: !current.active } : current
+      )),
+    );
+    showSavedMessage(cost.active ? "Gasto oculto desactivado." : "Gasto oculto activado.");
+  }
+
+  function deleteInternalCatalogCost(cost: InternalCostCatalogItem) {
+    if (!canEditCatalog) {
+      showSavedMessage("Tu rol no permite administrar el catálogo de gastos ocultos.");
+      return;
+    }
+
+    const isBaseCost = baseInternalCostCatalog.some((baseCost) => baseCost.id === cost.id);
+    if (isBaseCost) {
+      persistInternalCostCatalog(
+        internalCostCatalog.map((current) => (
+          current.id === cost.id
+            ? baseInternalCostCatalog.find((baseCost) => baseCost.id === cost.id) ?? current
+            : current
+        )),
+      );
+      clearInternalCatalogDraft();
+      showSavedMessage("Gasto oculto base restaurado.");
+      return;
+    }
+
+    if (!window.confirm("¿Eliminar este gasto oculto personalizado del catálogo?")) return;
+
+    persistInternalCostCatalog(internalCostCatalog.filter((current) => current.id !== cost.id));
+    if (editingInternalCatalogId === cost.id) clearInternalCatalogDraft();
+    showSavedMessage("Gasto oculto personalizado eliminado.");
   }
 
   function updateItem(id: string, patch: Partial<QuoteItem>) {
@@ -2257,12 +2382,82 @@ export function CotizadorApp() {
               </div>
 
               <div className="internal-catalog">
-                <div className="field">
-                  <label>Catálogo rápido de costos internos</label>
-                  <input disabled={!canEditCurrentQuote} value={internalCostSearch} onChange={(event) => setInternalCostSearch(event.target.value)} placeholder="Buscar hosting, dominio, servidor, API WhatsApp, Maps API, licencia..." />
+                {canEditCatalog && (
+                  <div className="internal-catalog-editor">
+                    <div className="card-title">
+                      <div>
+                        <h3>{editingInternalCatalogId ? "Editar gasto oculto del catálogo" : "Nuevo gasto oculto para el catálogo"}</h3>
+                        <p>Estos datos quedan disponibles para futuras cotizaciones en este navegador.</p>
+                      </div>
+                      <button className="btn ghost small" type="button" onClick={clearInternalCatalogDraft}>Limpiar</button>
+                    </div>
+                    <div className="form-grid internal-cost-form">
+                      <div className="field">
+                        <label>Concepto</label>
+                        <input value={internalCatalogDraft.name} onChange={(event) => setInternalCatalogDraft({ ...internalCatalogDraft, name: event.target.value })} placeholder="Ej. Servidor de producción" />
+                      </div>
+                      <div className="field">
+                        <label>Categoría</label>
+                        <select value={internalCatalogDraft.category} onChange={(event) => setInternalCatalogDraft({ ...internalCatalogDraft, category: event.target.value as ServiceCategory })}>
+                          {Object.entries(categoryLabels).map(([value, label]) => (
+                            <option key={value} value={value}>{label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="field">
+                        <label>Tipo de costo</label>
+                        <select value={internalCatalogDraft.billingType} onChange={(event) => setInternalCatalogDraft({ ...internalCatalogDraft, billingType: event.target.value as BillingType })}>
+                          <option value="one_time">Único</option>
+                          <option value="monthly">Mensual</option>
+                          <option value="annual">Anual</option>
+                          <option value="hourly">Por hora</option>
+                        </select>
+                      </div>
+                      <div className="field">
+                        <label>Importe predeterminado</label>
+                        <input type="number" min="0" value={internalCatalogDraft.basePrice} onChange={(event) => setInternalCatalogDraft({ ...internalCatalogDraft, basePrice: safeNumber(event.target.value) })} />
+                      </div>
+                      <div className="field">
+                        <label>Horas internas</label>
+                        <input type="number" min="0" value={internalCatalogDraft.estimatedHours} onChange={(event) => setInternalCatalogDraft({ ...internalCatalogDraft, estimatedHours: safeNumber(event.target.value) })} />
+                      </div>
+                      <div className="field">
+                        <label>Estatus</label>
+                        <select value={internalCatalogDraft.active ? "active" : "inactive"} onChange={(event) => setInternalCatalogDraft({ ...internalCatalogDraft, active: event.target.value === "active" })}>
+                          <option value="active">Activo</option>
+                          <option value="inactive">Inactivo</option>
+                        </select>
+                      </div>
+                      <div className="field full">
+                        <label>Nota interna predeterminada</label>
+                        <textarea value={internalCatalogDraft.descriptionInternal ?? ""} onChange={(event) => setInternalCatalogDraft({ ...internalCatalogDraft, descriptionInternal: event.target.value })} placeholder="Proveedor, renovación, condiciones u observaciones..." />
+                      </div>
+                    </div>
+                    <div className="split-actions">
+                      <button className="btn success" disabled={!internalCatalogDraft.name.trim() || internalCatalogDraft.basePrice < 0} type="button" onClick={saveInternalCatalogCost}>
+                        {editingInternalCatalogId ? "Guardar cambios" : "Crear en catálogo"}
+                      </button>
+                      <button className="btn ghost" type="button" onClick={clearInternalCatalogDraft}>Nuevo desde cero</button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="catalog-toolbar">
+                  <div className="field">
+                    <label>Buscar en catálogo de gastos ocultos</label>
+                    <input value={internalCostSearch} onChange={(event) => setInternalCostSearch(event.target.value)} placeholder="Hosting, dominio, servidor, API, licencia..." />
+                  </div>
+                  <div className="field">
+                    <label>Estatus</label>
+                    <select value={internalCostStatus} onChange={(event) => setInternalCostStatus(event.target.value as "active" | "inactive" | "all")}>
+                      <option value="active">Activos</option>
+                      <option value="inactive">Inactivos</option>
+                      <option value="all">Todos</option>
+                    </select>
+                  </div>
                 </div>
                 <div className="compact-table-wrap">
-                  <table className="compact-table">
+                  <table className="compact-table internal-catalog-table">
                     <thead>
                       <tr>
                         <th>Costo interno</th>
@@ -2270,12 +2465,13 @@ export function CotizadorApp() {
                         <th>Tipo</th>
                         <th>Importe</th>
                         <th>Horas</th>
-                        <th>Acción</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredInternalCostCatalog.map((cost) => (
-                        <tr key={cost.id}>
+                        <tr className={cost.active ? "" : "inactive-row"} key={cost.id}>
                           <td>
                             <strong>{cost.name}</strong>
                             <small>{cost.descriptionInternal}</small>
@@ -2284,16 +2480,25 @@ export function CotizadorApp() {
                           <td>{formatBillingType(cost.billingType)}</td>
                           <td>{formatCurrency(cost.basePrice)}</td>
                           <td>{cost.estimatedHours} h</td>
+                          <td>{cost.active ? "Activo" : "Inactivo"}</td>
                           <td>
-                            <button className="btn ghost small" disabled={!canEditCurrentQuote} type="button" onClick={() => addInternalCatalogCost(cost)}>
-                              Agregar
-                            </button>
+                            <div className="compact-actions">
+                              <button className="btn primary small" disabled={!canEditCurrentQuote || !cost.active} type="button" onClick={() => addInternalCatalogCost(cost)}>Agregar</button>
+                              {canEditCatalog && <button className="btn ghost small" type="button" onClick={() => startEditInternalCatalogCost(cost)}>Editar</button>}
+                              {canEditCatalog && <button className="btn warning small" type="button" onClick={() => toggleInternalCatalogCost(cost)}>{cost.active ? "Desactivar" : "Activar"}</button>}
+                              {canEditCatalog && (
+                                <button className="btn danger small" type="button" onClick={() => deleteInternalCatalogCost(cost)}>
+                                  {baseInternalCostCatalog.some((baseCost) => baseCost.id === cost.id) ? "Restaurar" : "Eliminar"}
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
+                {filteredInternalCostCatalog.length === 0 && <div className="notice">No hay gastos ocultos con esos filtros.</div>}
               </div>
 
               <div className="internal-cost-summary">
